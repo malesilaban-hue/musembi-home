@@ -9,7 +9,7 @@ import path from "node:path";
 // Pure Vite + React SPA. Build output goes to /dist and can be uploaded to
 // any static host (cPanel public_html, Netlify, Vercel static, S3, etc).
 export default defineConfig({
-  plugins: [react(), tailwindcss(), tsconfigPaths()],
+  plugins: [react(), tailwindcss(), tsconfigPaths(), devServerBridgePlugin(), hmrGatePlugin()],
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },
