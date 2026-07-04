@@ -1,17 +1,15 @@
 import { NavLink } from "react-router-dom";
-import { Home, Building2, Users, User } from "lucide-react";
-import { useAuth } from "@/lib/auth-context";
+import { Home, Building2, Users, FileSignature, Wallet } from "lucide-react";
 
-const base = [
+const items = [
   { to: "/dashboard", label: "Home", icon: Home },
-  { to: "/properties", label: "Properties", icon: Building2 },
-  { to: "/team", label: "Team", icon: Users, adminOnly: true },
-  { to: "/profile", label: "Profile", icon: User },
+  { to: "/properties", label: "Property", icon: Building2 },
+  { to: "/tenants", label: "Tenants", icon: Users },
+  { to: "/leases", label: "Leases", icon: FileSignature },
+  { to: "/payments", label: "Pay", icon: Wallet },
 ];
 
 export function BottomNav() {
-  const { hasRole } = useAuth();
-  const items = base.filter((i) => !i.adminOnly || hasRole(["super_admin", "landlord"]));
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 md:hidden"
