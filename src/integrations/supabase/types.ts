@@ -85,6 +85,283 @@ export type Database = {
           },
         ]
       }
+      invoice_items: {
+        Row: {
+          amount: number
+          created_at: string
+          description: string
+          id: string
+          invoice_id: string
+          quantity: number
+          unit_price: number
+        }
+        Insert: {
+          amount?: number
+          created_at?: string
+          description: string
+          id?: string
+          invoice_id: string
+          quantity?: number
+          unit_price?: number
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          description?: string
+          id?: string
+          invoice_id?: string
+          quantity?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoice_items_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          amount_paid: number
+          balance: number | null
+          created_at: string
+          created_by: string | null
+          due_date: string
+          id: string
+          invoice_number: string
+          lease_id: string
+          notes: string | null
+          period_end: string
+          period_start: string
+          status: Database["public"]["Enums"]["invoice_status"]
+          subtotal: number
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          amount_paid?: number
+          balance?: number | null
+          created_at?: string
+          created_by?: string | null
+          due_date: string
+          id?: string
+          invoice_number: string
+          lease_id: string
+          notes?: string | null
+          period_end: string
+          period_start: string
+          status?: Database["public"]["Enums"]["invoice_status"]
+          subtotal?: number
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          amount_paid?: number
+          balance?: number | null
+          created_at?: string
+          created_by?: string | null
+          due_date?: string
+          id?: string
+          invoice_number?: string
+          lease_id?: string
+          notes?: string | null
+          period_end?: string
+          period_start?: string
+          status?: Database["public"]["Enums"]["invoice_status"]
+          subtotal?: number
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leases: {
+        Row: {
+          billing_day: number
+          created_at: string
+          created_by: string | null
+          deposit: number
+          end_date: string | null
+          garbage_charge: number
+          id: string
+          monthly_rent: number
+          notes: string | null
+          parking_charge: number
+          qr_token: string
+          service_charge: number
+          start_date: string
+          status: Database["public"]["Enums"]["lease_status"]
+          tenant_id: string
+          unit_id: string
+          updated_at: string
+          water_charge: number
+        }
+        Insert: {
+          billing_day?: number
+          created_at?: string
+          created_by?: string | null
+          deposit?: number
+          end_date?: string | null
+          garbage_charge?: number
+          id?: string
+          monthly_rent: number
+          notes?: string | null
+          parking_charge?: number
+          qr_token?: string
+          service_charge?: number
+          start_date: string
+          status?: Database["public"]["Enums"]["lease_status"]
+          tenant_id: string
+          unit_id: string
+          updated_at?: string
+          water_charge?: number
+        }
+        Update: {
+          billing_day?: number
+          created_at?: string
+          created_by?: string | null
+          deposit?: number
+          end_date?: string | null
+          garbage_charge?: number
+          id?: string
+          monthly_rent?: number
+          notes?: string | null
+          parking_charge?: number
+          qr_token?: string
+          service_charge?: number
+          start_date?: string
+          status?: Database["public"]["Enums"]["lease_status"]
+          tenant_id?: string
+          unit_id?: string
+          updated_at?: string
+          water_charge?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leases_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leases_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payment_allocations: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          invoice_id: string
+          payment_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          invoice_id: string
+          payment_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          payment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_allocations_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payment_allocations_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          lease_id: string | null
+          method: Database["public"]["Enums"]["payment_method"]
+          notes: string | null
+          paid_at: string
+          receipt_number: string
+          recorded_by: string | null
+          reference: string | null
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          lease_id?: string | null
+          method: Database["public"]["Enums"]["payment_method"]
+          notes?: string | null
+          paid_at?: string
+          receipt_number: string
+          recorded_by?: string | null
+          reference?: string | null
+          tenant_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          lease_id?: string | null
+          method?: Database["public"]["Enums"]["payment_method"]
+          notes?: string | null
+          paid_at?: string
+          receipt_number?: string
+          recorded_by?: string | null
+          reference?: string | null
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_lease_id_fkey"
+            columns: ["lease_id"]
+            isOneToOne: false
+            referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -154,6 +431,110 @@ export type Database = {
           owner_id?: string
           photo_url?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      tenant_documents: {
+        Row: {
+          created_at: string
+          doc_type: Database["public"]["Enums"]["tenant_doc_type"]
+          file_name: string
+          id: string
+          mime_type: string | null
+          size_bytes: number | null
+          storage_path: string
+          tenant_id: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          doc_type: Database["public"]["Enums"]["tenant_doc_type"]
+          file_name: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          storage_path: string
+          tenant_id: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          doc_type?: Database["public"]["Enums"]["tenant_doc_type"]
+          file_name?: string
+          id?: string
+          mime_type?: string | null
+          size_bytes?: number | null
+          storage_path?: string
+          tenant_id?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tenant_documents_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          alt_phone: string | null
+          created_at: string
+          created_by: string | null
+          email: string | null
+          emergency_name: string | null
+          emergency_phone: string | null
+          emergency_relation: string | null
+          employer: string | null
+          full_name: string
+          id: string
+          kra_pin: string | null
+          national_id: string | null
+          notes: string | null
+          occupation: string | null
+          phone: string
+          updated_at: string
+          user_id: string | null
+        }
+        Insert: {
+          alt_phone?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          emergency_name?: string | null
+          emergency_phone?: string | null
+          emergency_relation?: string | null
+          employer?: string | null
+          full_name: string
+          id?: string
+          kra_pin?: string | null
+          national_id?: string | null
+          notes?: string | null
+          occupation?: string | null
+          phone: string
+          updated_at?: string
+          user_id?: string | null
+        }
+        Update: {
+          alt_phone?: string | null
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          emergency_name?: string | null
+          emergency_phone?: string | null
+          emergency_relation?: string | null
+          employer?: string | null
+          full_name?: string
+          id?: string
+          kra_pin?: string | null
+          national_id?: string | null
+          notes?: string | null
+          occupation?: string | null
+          phone?: string
+          updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -278,6 +659,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      next_invoice_number: { Args: never; Returns: string }
+      next_receipt_number: { Args: never; Returns: string }
     }
     Enums: {
       app_role:
@@ -288,6 +671,15 @@ export type Database = {
         | "technician"
         | "security"
         | "tenant"
+      invoice_status: "unpaid" | "partial" | "paid" | "overdue" | "void"
+      lease_status: "active" | "pending" | "ended" | "terminated"
+      payment_method: "cash" | "cheque" | "bank_transfer" | "mpesa" | "other"
+      tenant_doc_type:
+        | "national_id"
+        | "kra_pin"
+        | "passport"
+        | "lease_contract"
+        | "other"
       unit_status:
         | "vacant"
         | "occupied"
@@ -429,6 +821,16 @@ export const Constants = {
         "technician",
         "security",
         "tenant",
+      ],
+      invoice_status: ["unpaid", "partial", "paid", "overdue", "void"],
+      lease_status: ["active", "pending", "ended", "terminated"],
+      payment_method: ["cash", "cheque", "bank_transfer", "mpesa", "other"],
+      tenant_doc_type: [
+        "national_id",
+        "kra_pin",
+        "passport",
+        "lease_contract",
+        "other",
       ],
       unit_status: [
         "vacant",
