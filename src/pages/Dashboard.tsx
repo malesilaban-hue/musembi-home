@@ -2,13 +2,18 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, DoorOpen, DoorClosed, Wallet } from "lucide-react";
+import { Building2, DoorOpen, DoorClosed, Wallet, Users, FileSignature, ReceiptText, AlertTriangle } from "lucide-react";
+import { KES } from "@/lib/format";
 
 interface Stats {
   properties: number;
   units: number;
   vacant: number;
   expected_rent: number;
+  tenants: number;
+  active_leases: number;
+  outstanding: number;
+  overdue: number;
 }
 
 export default function Dashboard() {
@@ -19,38 +24,41 @@ export default function Dashboard() {
     document.title = "Dashboard · MUSEMBI PMS";
     let cancelled = false;
     (async () => {
-      const [{ count: pCount }, { data: units }] = await Promise.all([
+      const [pCount, uRes, tCount, lCount, invRes] = await Promise.all([
         supabase.from("properties").select("*", { count: "exact", head: true }),
         supabase.from("units").select("status,rent"),
+        supabase.from("tenants").select("*", { count: "exact", head: true }),
+        supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("invoices").select("balance,status"),
       ]);
       if (cancelled) return;
-      const uList = units ?? [];
+      const uList = uRes.data ?? [];
+      const inv = invRes.data ?? [];
       setStats({
-        properties: pCount ?? 0,
+        properties: pCount.count ?? 0,
         units: uList.length,
         vacant: uList.filter((u) => u.status === "vacant").length,
         expected_rent: uList
           .filter((u) => u.status === "occupied")
           .reduce((sum, u) => sum + Number(u.rent || 0), 0),
+        tenants: tCount.count ?? 0,
+        active_leases: lCount.count ?? 0,
+        outstanding: inv.reduce((s, i) => s + Number(i.balance || 0), 0),
+        overdue: inv.filter((i) => i.status === "overdue").length,
       });
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const cards = [
     { label: "Properties", value: stats?.properties ?? "—", icon: Building2 },
     { label: "Total units", value: stats?.units ?? "—", icon: DoorClosed },
     { label: "Vacant units", value: stats?.vacant ?? "—", icon: DoorOpen },
-    {
-      label: "Expected monthly rent",
-      value:
-        stats === null
-          ? "—"
-          : `KES ${stats.expected_rent.toLocaleString("en-KE", { maximumFractionDigits: 0 })}`,
-      icon: Wallet,
-    },
+    { label: "Tenants", value: stats?.tenants ?? "—", icon: Users },
+    { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
+    { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
+    { label: "Outstanding balance", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
+    { label: "Overdue invoices", value: stats?.overdue ?? "—", icon: AlertTriangle },
   ];
 
   return (
@@ -76,19 +84,6 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Getting started</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <p>Phase 1 is live: authentication, roles, properties, blocks and units.</p>
-          <p>
-            Upcoming phases will add tenants &amp; leases, M-Pesa STK Push billing, receipts,
-            maintenance workflow, visitor management and full reporting.
-          </p>
-        </CardContent>
-      </Card>
     </div>
   );
 }
