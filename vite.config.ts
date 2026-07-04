@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsconfigPaths from "vite-tsconfig-paths";
+import { devServerBridgePlugin } from "@lovable.dev/vite-plugin-dev-server-bridge";
+import { hmrGatePlugin } from "@lovable.dev/vite-plugin-hmr-gate";
 import path from "node:path";
 
 // Pure Vite + React SPA. Build output goes to /dist and can be uploaded to
