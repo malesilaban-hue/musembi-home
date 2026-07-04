@@ -14,16 +14,286 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          entity: string
+          entity_id: string | null
+          id: string
+          ip_address: string | null
+          new_value: Json | null
+          old_value: Json | null
+          user_id: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          entity: string
+          entity_id?: string | null
+          id?: string
+          ip_address?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          user_id?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          entity?: string
+          entity_id?: string | null
+          id?: string
+          ip_address?: string | null
+          new_value?: Json | null
+          old_value?: Json | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      blocks: {
+        Row: {
+          created_at: string
+          floors: number
+          id: string
+          name: string
+          property_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          floors?: number
+          id?: string
+          name: string
+          property_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          floors?: number
+          id?: string
+          name?: string
+          property_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "blocks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          phone: string | null
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          phone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      properties: {
+        Row: {
+          address: string | null
+          city: string | null
+          county: string | null
+          created_at: string
+          gps_lat: number | null
+          gps_lng: number | null
+          id: string
+          name: string
+          notes: string | null
+          owner_id: string
+          photo_url: string | null
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          county?: string | null
+          created_at?: string
+          gps_lat?: number | null
+          gps_lng?: number | null
+          id?: string
+          name: string
+          notes?: string | null
+          owner_id: string
+          photo_url?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          county?: string | null
+          created_at?: string
+          gps_lat?: number | null
+          gps_lng?: number | null
+          id?: string
+          name?: string
+          notes?: string | null
+          owner_id?: string
+          photo_url?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      units: {
+        Row: {
+          bathrooms: number
+          bedrooms: number
+          block_id: string | null
+          created_at: string
+          deposit: number
+          floor: number | null
+          garbage_charge: number
+          house_number: string
+          id: string
+          internal_code: string | null
+          meter_electricity: string | null
+          meter_water: string | null
+          notes: string | null
+          parking_charge: number
+          property_id: string
+          rent: number
+          service_charge: number
+          status: Database["public"]["Enums"]["unit_status"]
+          updated_at: string
+          water_charge: number
+        }
+        Insert: {
+          bathrooms?: number
+          bedrooms?: number
+          block_id?: string | null
+          created_at?: string
+          deposit?: number
+          floor?: number | null
+          garbage_charge?: number
+          house_number: string
+          id?: string
+          internal_code?: string | null
+          meter_electricity?: string | null
+          meter_water?: string | null
+          notes?: string | null
+          parking_charge?: number
+          property_id: string
+          rent?: number
+          service_charge?: number
+          status?: Database["public"]["Enums"]["unit_status"]
+          updated_at?: string
+          water_charge?: number
+        }
+        Update: {
+          bathrooms?: number
+          bedrooms?: number
+          block_id?: string | null
+          created_at?: string
+          deposit?: number
+          floor?: number | null
+          garbage_charge?: number
+          house_number?: string
+          id?: string
+          internal_code?: string | null
+          meter_electricity?: string | null
+          meter_water?: string | null
+          notes?: string | null
+          parking_charge?: number
+          property_id?: string
+          rent?: number
+          service_charge?: number
+          status?: Database["public"]["Enums"]["unit_status"]
+          updated_at?: string
+          water_charge?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "units_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "units_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_user_has_any_role: {
+        Args: { _roles: Database["public"]["Enums"]["app_role"][] }
+        Returns: boolean
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role:
+        | "super_admin"
+        | "landlord"
+        | "caretaker"
+        | "accountant"
+        | "technician"
+        | "security"
+        | "tenant"
+      unit_status:
+        | "vacant"
+        | "occupied"
+        | "reserved"
+        | "maintenance"
+        | "unavailable"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +420,23 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: [
+        "super_admin",
+        "landlord",
+        "caretaker",
+        "accountant",
+        "technician",
+        "security",
+        "tenant",
+      ],
+      unit_status: [
+        "vacant",
+        "occupied",
+        "reserved",
+        "maintenance",
+        "unavailable",
+      ],
+    },
   },
 } as const
