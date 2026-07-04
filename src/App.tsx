@@ -8,6 +8,13 @@ const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Properties = lazy(() => import("./pages/Properties"));
 const PropertyDetail = lazy(() => import("./pages/PropertyDetail"));
+const Tenants = lazy(() => import("./pages/Tenants"));
+const TenantDetail = lazy(() => import("./pages/TenantDetail"));
+const Leases = lazy(() => import("./pages/Leases"));
+const LeaseDetail = lazy(() => import("./pages/LeaseDetail"));
+const Invoices = lazy(() => import("./pages/Invoices"));
+const InvoiceDetail = lazy(() => import("./pages/InvoiceDetail"));
+const Payments = lazy(() => import("./pages/Payments"));
 const Team = lazy(() => import("./pages/Team"));
 const Profile = lazy(() => import("./pages/Profile"));
 const NotFound = lazy(() => import("./pages/NotFound"));
@@ -36,6 +43,13 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/properties" element={<Properties />} />
           <Route path="/properties/:id" element={<PropertyDetail />} />
+          <Route path="/tenants" element={<Tenants />} />
+          <Route path="/tenants/:id" element={<TenantDetail />} />
+          <Route path="/leases" element={<Leases />} />
+          <Route path="/leases/:id" element={<LeaseDetail />} />
+          <Route path="/invoices" element={<Invoices />} />
+          <Route path="/invoices/:id" element={<InvoiceDetail />} />
+          <Route path="/payments" element={<Payments />} />
           <Route path="/team" element={<Team />} />
           <Route path="/profile" element={<Profile />} />
         </Route>

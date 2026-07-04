@@ -1,12 +1,16 @@
 import { NavLink } from "react-router-dom";
-import { Home, Building2, Users, User } from "lucide-react";
+import { Home, Building2, Users, User, FileSignature, ReceiptText, Wallet, UserCog } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import logo from "@/assets/logo.png";
 
 const items = [
   { to: "/dashboard", label: "Dashboard", icon: Home },
   { to: "/properties", label: "Properties", icon: Building2 },
-  { to: "/team", label: "Team", icon: Users, adminOnly: true },
+  { to: "/tenants", label: "Tenants", icon: Users },
+  { to: "/leases", label: "Leases", icon: FileSignature },
+  { to: "/invoices", label: "Invoices", icon: ReceiptText },
+  { to: "/payments", label: "Payments", icon: Wallet },
+  { to: "/team", label: "Team", icon: UserCog, adminOnly: true },
   { to: "/profile", label: "Profile", icon: User },
 ];
 
@@ -21,7 +25,7 @@ export function SideNav() {
           <span className="text-[11px] font-medium text-muted-foreground">PMS</span>
         </div>
       </div>
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {items
           .filter((i) => !i.adminOnly || hasRole(["super_admin", "landlord"]))
           .map(({ to, label, icon: Icon }) => (
