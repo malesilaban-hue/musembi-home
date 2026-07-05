@@ -211,4 +211,239 @@
   .group:hover .icon-3d {
     transform: translateZ(40px) rotate(-6deg);
   }
+
+  /* ============ Global 3D primitives ============ */
+
+  /* Every shadcn Card gets tangible depth automatically */
+  [class*="rounded-xl"][class*="bg-card"],
+  [class*="rounded-lg"][class*="bg-card"] {
+    background:
+      linear-gradient(160deg,
+        color-mix(in oklab, var(--card) 100%, white 5%) 0%,
+        var(--card) 50%,
+        color-mix(in oklab, var(--card) 100%, black 6%) 100%);
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 55%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 15%, transparent) inset,
+      0 1px 2px color-mix(in oklab, black 8%, transparent),
+      0 10px 24px -14px color-mix(in oklab, var(--primary) 30%, transparent),
+      0 20px 36px -22px color-mix(in oklab, black 45%, transparent);
+    border-color: color-mix(in oklab, var(--border) 100%, transparent);
+  }
+  .dark [class*="rounded-xl"][class*="bg-card"],
+  .dark [class*="rounded-lg"][class*="bg-card"] {
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 10%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 55%, transparent) inset,
+      0 2px 4px color-mix(in oklab, black 40%, transparent),
+      0 14px 28px -16px color-mix(in oklab, var(--primary) 40%, transparent),
+      0 28px 48px -24px color-mix(in oklab, black 75%, transparent);
+  }
+
+  /* Buttons — chiseled tactile pill */
+  button[class*="bg-primary"],
+  a[class*="bg-primary"][class*="rounded"] {
+    background-image: linear-gradient(180deg,
+      color-mix(in oklab, var(--primary) 100%, white 14%) 0%,
+      var(--primary) 55%,
+      color-mix(in oklab, var(--primary) 100%, black 12%) 100%);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
+      inset 0 -2px 3px color-mix(in oklab, black 30%, transparent),
+      0 4px 10px -3px color-mix(in oklab, var(--primary) 55%, transparent),
+      0 1px 2px color-mix(in oklab, black 22%, transparent);
+    transition: transform 150ms ease, box-shadow 200ms ease, filter 150ms ease;
+  }
+  button[class*="bg-primary"]:hover,
+  a[class*="bg-primary"][class*="rounded"]:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.04);
+  }
+  button[class*="bg-primary"]:active,
+  a[class*="bg-primary"][class*="rounded"]:active {
+    transform: translateY(1px);
+    box-shadow:
+      inset 0 2px 4px color-mix(in oklab, black 35%, transparent),
+      inset 0 -1px 0 color-mix(in oklab, white 20%, transparent),
+      0 1px 2px color-mix(in oklab, black 25%, transparent);
+  }
+
+  button[class*="bg-secondary"] {
+    background-image: linear-gradient(180deg,
+      color-mix(in oklab, var(--secondary) 100%, white 10%),
+      var(--secondary) 55%,
+      color-mix(in oklab, var(--secondary) 100%, black 8%));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
+      inset 0 -2px 3px color-mix(in oklab, black 22%, transparent),
+      0 3px 8px -3px color-mix(in oklab, black 30%, transparent);
+  }
+  button[class*="bg-destructive"] {
+    background-image: linear-gradient(180deg,
+      color-mix(in oklab, var(--destructive) 100%, white 10%),
+      var(--destructive) 55%,
+      color-mix(in oklab, var(--destructive) 100%, black 12%));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 35%, transparent),
+      inset 0 -2px 3px color-mix(in oklab, black 30%, transparent),
+      0 4px 10px -3px color-mix(in oklab, var(--destructive) 45%, transparent);
+  }
+
+  /* Inputs / textareas / selects — inset "pressed" feel */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  textarea,
+  [data-slot="select-trigger"],
+  button[role="combobox"] {
+    background:
+      linear-gradient(180deg,
+        color-mix(in oklab, var(--background) 100%, black 4%),
+        var(--background));
+    box-shadow:
+      inset 0 2px 3px color-mix(in oklab, black 12%, transparent),
+      inset 0 -1px 0 color-mix(in oklab, white 60%, transparent),
+      0 1px 0 color-mix(in oklab, white 50%, transparent);
+  }
+  .dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  .dark textarea,
+  .dark [data-slot="select-trigger"],
+  .dark button[role="combobox"] {
+    background:
+      linear-gradient(180deg,
+        color-mix(in oklab, var(--background) 100%, black 15%),
+        var(--background));
+    box-shadow:
+      inset 0 2px 4px color-mix(in oklab, black 55%, transparent),
+      inset 0 -1px 0 color-mix(in oklab, white 6%, transparent);
+  }
+  input:focus-visible,
+  textarea:focus-visible {
+    box-shadow:
+      inset 0 2px 3px color-mix(in oklab, black 12%, transparent),
+      0 0 0 3px color-mix(in oklab, var(--ring) 35%, transparent);
+  }
+
+  /* Tables — raised sheet with striped depth */
+  table {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--card) 100%, white 4%),
+      var(--card));
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 55%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 12%, transparent) inset,
+      0 10px 22px -14px color-mix(in oklab, black 45%, transparent);
+  }
+  table thead {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--muted) 100%, white 6%),
+      var(--muted));
+    box-shadow: inset 0 -1px 0 color-mix(in oklab, black 12%, transparent);
+  }
+  table tbody tr:hover {
+    background: color-mix(in oklab, var(--primary) 6%, transparent);
+  }
+
+  /* Dialogs / Sheets / Popovers — floating pane with lifted shadow */
+  [role="dialog"] > [data-state],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"] {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--popover) 100%, white 4%),
+      var(--popover));
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 45%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 15%, transparent) inset,
+      0 20px 40px -12px color-mix(in oklab, black 40%, transparent),
+      0 40px 80px -24px color-mix(in oklab, var(--primary) 30%, transparent);
+  }
+  .dark [role="dialog"] > [data-state],
+  .dark [data-slot="dialog-content"],
+  .dark [data-slot="sheet-content"],
+  .dark [data-slot="popover-content"],
+  .dark [data-slot="dropdown-menu-content"] {
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 8%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 55%, transparent) inset,
+      0 24px 48px -12px color-mix(in oklab, black 75%, transparent),
+      0 40px 80px -24px color-mix(in oklab, var(--primary) 40%, transparent);
+  }
+
+  /* Badges — mini pills with subtle lift */
+  [class*="rounded-full"][class*="bg-primary"],
+  [class*="rounded-md"][class*="bg-primary"][class*="px-"] {
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 40%, transparent),
+      inset 0 -1px 0 color-mix(in oklab, black 20%, transparent),
+      0 2px 4px -1px color-mix(in oklab, var(--primary) 45%, transparent);
+  }
+
+  /* ============ Nav depth ============ */
+
+  /* Sidebar — brushed panel with inner right shadow */
+  aside.bg-sidebar {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--sidebar) 100%, white 3%),
+      var(--sidebar) 60%,
+      color-mix(in oklab, var(--sidebar) 100%, black 4%));
+    box-shadow:
+      inset -1px 0 0 color-mix(in oklab, black 12%, transparent),
+      4px 0 20px -12px color-mix(in oklab, black 40%, transparent);
+  }
+  aside.bg-sidebar a[class*="bg-sidebar-primary"] {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--sidebar-primary) 100%, white 12%),
+      var(--sidebar-primary) 55%,
+      color-mix(in oklab, var(--sidebar-primary) 100%, black 15%));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 40%, transparent),
+      inset 0 -2px 3px color-mix(in oklab, black 30%, transparent),
+      0 6px 14px -4px color-mix(in oklab, var(--sidebar-primary) 55%, transparent);
+    transform: translateZ(0);
+  }
+
+  /* Bottom nav — floating raised bar */
+  nav.fixed[class*="bottom-0"] {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--background) 100%, white 4%),
+      var(--background));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 60%, transparent),
+      0 -8px 20px -8px color-mix(in oklab, black 30%, transparent),
+      0 -1px 0 color-mix(in oklab, var(--border) 100%, transparent);
+  }
+  .dark nav.fixed[class*="bottom-0"] {
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--background) 100%, white 6%),
+      var(--background));
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 8%, transparent),
+      0 -10px 24px -8px color-mix(in oklab, black 70%, transparent);
+  }
+  nav.fixed[class*="bottom-0"] a {
+    position: relative;
+    transition: transform 200ms ease, color 200ms ease;
+  }
+  nav.fixed[class*="bottom-0"] a[class*="text-primary"] {
+    transform: translateY(-4px);
+  }
+  nav.fixed[class*="bottom-0"] a[class*="text-primary"] svg {
+    padding: 6px;
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    background: linear-gradient(180deg,
+      color-mix(in oklab, var(--primary) 100%, white 14%),
+      var(--primary) 55%,
+      color-mix(in oklab, var(--primary) 100%, black 15%));
+    color: var(--primary-foreground);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 45%, transparent),
+      inset 0 -2px 3px color-mix(in oklab, black 30%, transparent),
+      0 8px 16px -4px color-mix(in oklab, var(--primary) 55%, transparent),
+      0 2px 4px color-mix(in oklab, black 25%, transparent);
+  }
 }
+
