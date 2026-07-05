@@ -71,17 +71,31 @@ export default function Dashboard() {
         </p>
       </header>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div
+        className="grid grid-cols-2 gap-4 sm:gap-5 md:grid-cols-4"
+        style={{ perspective: "1200px" }}
+      >
         {cards.map(({ label, value, icon: Icon }) => (
-          <Card key={label} className="border-border">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-xs font-medium text-muted-foreground">{label}</CardTitle>
-              <Icon className="h-4 w-4 text-primary" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-xl font-bold md:text-2xl">{value}</div>
-            </CardContent>
-          </Card>
+          <div key={label} className="group [transform-style:preserve-3d]">
+            <Card className="card-3d relative overflow-hidden border-0 p-0 transition-all duration-500 ease-out will-change-transform hover:-translate-y-1.5 hover:[transform:rotateX(6deg)_rotateY(-6deg)]">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent dark:via-white/25" />
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/60 via-white/0 to-black/5 opacity-70 mix-blend-overlay dark:from-white/10 dark:to-black/40" />
+              <CardHeader className="relative flex flex-row items-center justify-between space-y-0 p-4 pb-2 md:p-5 md:pb-2">
+                <CardTitle className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground md:text-xs">
+                  {label}
+                </CardTitle>
+                <span className="icon-3d relative flex h-9 w-9 items-center justify-center rounded-xl text-primary-foreground md:h-10 md:w-10">
+                  <Icon className="h-4 w-4 md:h-[18px] md:w-[18px]" />
+                </span>
+              </CardHeader>
+              <CardContent className="relative p-4 pt-1 md:p-5 md:pt-1">
+                <div className="text-xl font-extrabold tracking-tight text-foreground md:text-2xl">
+                  {value}
+                </div>
+              </CardContent>
+              <div className="pointer-events-none absolute inset-x-3 -bottom-3 h-4 rounded-full bg-black/25 blur-lg dark:bg-black/60" />
+            </Card>
+          </div>
         ))}
       </div>
     </div>
