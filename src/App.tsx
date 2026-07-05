@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { RequireAuth } from "./components/RequireAuth";
+import { RequireRole } from "./components/RequireRole";
 import { AppShell } from "./components/layout/AppShell";
 import { Loader2 } from "lucide-react";
 
@@ -41,16 +42,16 @@ export default function App() {
         >
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/properties" element={<Properties />} />
-          <Route path="/properties/:id" element={<PropertyDetail />} />
-          <Route path="/tenants" element={<Tenants />} />
+          <Route path="/properties" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><Properties /></RequireRole>} />
+          <Route path="/properties/:id" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><PropertyDetail /></RequireRole>} />
+          <Route path="/tenants" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><Tenants /></RequireRole>} />
           <Route path="/tenants/:id" element={<TenantDetail />} />
-          <Route path="/leases" element={<Leases />} />
+          <Route path="/leases" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><Leases /></RequireRole>} />
           <Route path="/leases/:id" element={<LeaseDetail />} />
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/payments" element={<Payments />} />
-          <Route path="/team" element={<Team />} />
+          <Route path="/team" element={<RequireRole roles={["super_admin","landlord"]}><Team /></RequireRole>} />
           <Route path="/profile" element={<Profile />} />
         </Route>
         <Route path="*" element={<NotFound />} />

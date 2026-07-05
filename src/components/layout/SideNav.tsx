@@ -1,16 +1,20 @@
 import { NavLink } from "react-router-dom";
 import { Home, Building2, Users, User, FileSignature, ReceiptText, Wallet, UserCog } from "lucide-react";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, type AppRole } from "@/lib/auth-context";
 import logo from "@/assets/logo.png";
 
-const items = [
+type Item = { to: string; label: string; icon: typeof Home; roles?: AppRole[]; hideFor?: AppRole[] };
+
+const STAFF: AppRole[] = ["super_admin", "landlord", "caretaker", "accountant"];
+
+const items: Item[] = [
   { to: "/dashboard", label: "Dashboard", icon: Home },
-  { to: "/properties", label: "Properties", icon: Building2 },
-  { to: "/tenants", label: "Tenants", icon: Users },
-  { to: "/leases", label: "Leases", icon: FileSignature },
+  { to: "/properties", label: "Properties", icon: Building2, roles: STAFF },
+  { to: "/tenants", label: "Tenants", icon: Users, roles: STAFF },
+  { to: "/leases", label: "Leases", icon: FileSignature, roles: STAFF },
   { to: "/invoices", label: "Invoices", icon: ReceiptText },
   { to: "/payments", label: "Payments", icon: Wallet },
-  { to: "/team", label: "Team", icon: UserCog, adminOnly: true },
+  { to: "/team", label: "Team", icon: UserCog, roles: ["super_admin", "landlord"] },
   { to: "/profile", label: "Profile", icon: User },
 ];
 
@@ -27,7 +31,7 @@ export function SideNav() {
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-3">
         {items
-          .filter((i) => !i.adminOnly || hasRole(["super_admin", "landlord"]))
+          .filter((i) => !i.roles || hasRole(i.roles))
           .map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
