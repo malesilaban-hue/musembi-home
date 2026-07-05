@@ -160,3 +160,55 @@
       sans-serif;
   }
 }
+
+/* ============ 3D tangible card system ============ */
+@layer components {
+  .card-3d {
+    border-radius: 1rem;
+    background:
+      linear-gradient(160deg,
+        color-mix(in oklab, var(--card) 100%, white 6%) 0%,
+        var(--card) 45%,
+        color-mix(in oklab, var(--card) 100%, black 8%) 100%);
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 60%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 18%, transparent) inset,
+      0 1px 2px color-mix(in oklab, black 10%, transparent),
+      0 8px 16px -8px color-mix(in oklab, var(--primary) 35%, transparent),
+      0 22px 40px -22px color-mix(in oklab, black 55%, transparent);
+    transform: translateZ(0);
+  }
+  .dark .card-3d {
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 12%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 60%, transparent) inset,
+      0 2px 4px color-mix(in oklab, black 50%, transparent),
+      0 10px 22px -10px color-mix(in oklab, var(--primary) 55%, transparent),
+      0 28px 50px -24px color-mix(in oklab, black 80%, transparent);
+  }
+  .card-3d:hover {
+    box-shadow:
+      0 1px 0 color-mix(in oklab, white 70%, transparent) inset,
+      0 -1px 0 color-mix(in oklab, black 22%, transparent) inset,
+      0 2px 4px color-mix(in oklab, black 12%, transparent),
+      0 18px 30px -12px color-mix(in oklab, var(--primary) 45%, transparent),
+      0 36px 60px -28px color-mix(in oklab, black 60%, transparent);
+  }
+  .icon-3d {
+    background:
+      radial-gradient(120% 120% at 30% 20%,
+        color-mix(in oklab, var(--primary) 100%, white 30%) 0%,
+        var(--primary) 55%,
+        color-mix(in oklab, var(--primary) 100%, black 25%) 100%);
+    box-shadow:
+      inset 0 1px 0 color-mix(in oklab, white 55%, transparent),
+      inset 0 -2px 3px color-mix(in oklab, black 40%, transparent),
+      0 6px 14px -4px color-mix(in oklab, var(--primary) 55%, transparent),
+      0 1px 2px color-mix(in oklab, black 25%, transparent);
+    transform: translateZ(30px);
+    transition: transform 500ms ease;
+  }
+  .group:hover .icon-3d {
+    transform: translateZ(40px) rotate(-6deg);
+  }
+}
