@@ -263,6 +263,78 @@ export type Database = {
           },
         ]
       }
+      maintenance: {
+        Row: {
+          actual_cost: number | null
+          assigned_to: string | null
+          completion_date: string | null
+          created_at: string
+          description: string | null
+          estimated_cost: number | null
+          id: string
+          notes: string | null
+          priority: string
+          property_id: string
+          reported_by: string | null
+          reported_date: string
+          status: string
+          title: string
+          unit_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          actual_cost?: number | null
+          assigned_to?: string | null
+          completion_date?: string | null
+          created_at?: string
+          description?: string | null
+          estimated_cost?: number | null
+          id?: string
+          notes?: string | null
+          priority?: string
+          property_id: string
+          reported_by?: string | null
+          reported_date?: string
+          status?: string
+          title: string
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          actual_cost?: number | null
+          assigned_to?: string | null
+          completion_date?: string | null
+          created_at?: string
+          description?: string | null
+          estimated_cost?: number | null
+          id?: string
+          notes?: string | null
+          priority?: string
+          property_id?: string
+          reported_by?: string | null
+          reported_date?: string
+          status?: string
+          title?: string
+          unit_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "maintenance_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "maintenance_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       payment_allocations: {
         Row: {
           amount: number
@@ -311,6 +383,7 @@ export type Database = {
           method: Database["public"]["Enums"]["payment_method"]
           notes: string | null
           paid_at: string
+          reason: string | null
           receipt_number: string
           recorded_by: string | null
           reference: string | null
@@ -325,6 +398,7 @@ export type Database = {
           method: Database["public"]["Enums"]["payment_method"]
           notes?: string | null
           paid_at?: string
+          reason?: string | null
           receipt_number: string
           recorded_by?: string | null
           reference?: string | null
@@ -339,6 +413,7 @@ export type Database = {
           method?: Database["public"]["Enums"]["payment_method"]
           notes?: string | null
           paid_at?: string
+          reason?: string | null
           receipt_number?: string
           recorded_by?: string | null
           reference?: string | null
@@ -487,12 +562,9 @@ export type Database = {
           emergency_name: string | null
           emergency_phone: string | null
           emergency_relation: string | null
-          employer: string | null
           full_name: string
           id: string
-          kra_pin: string | null
           national_id: string | null
-          notes: string | null
           occupation: string | null
           phone: string
           updated_at: string
@@ -506,12 +578,9 @@ export type Database = {
           emergency_name?: string | null
           emergency_phone?: string | null
           emergency_relation?: string | null
-          employer?: string | null
           full_name: string
           id?: string
-          kra_pin?: string | null
           national_id?: string | null
-          notes?: string | null
           occupation?: string | null
           phone: string
           updated_at?: string
@@ -525,12 +594,9 @@ export type Database = {
           emergency_name?: string | null
           emergency_phone?: string | null
           emergency_relation?: string | null
-          employer?: string | null
           full_name?: string
           id?: string
-          kra_pin?: string | null
           national_id?: string | null
-          notes?: string | null
           occupation?: string | null
           phone?: string
           updated_at?: string
@@ -540,12 +606,11 @@ export type Database = {
       }
       units: {
         Row: {
-          bathrooms: number
-          bedrooms: number
           block_id: string | null
           created_at: string
           deposit: number
           floor: number | null
+          floor_level: Database["public"]["Enums"]["floor_level"]
           garbage_charge: number
           house_number: string
           id: string
@@ -558,16 +623,16 @@ export type Database = {
           rent: number
           service_charge: number
           status: Database["public"]["Enums"]["unit_status"]
+          unit_type: Database["public"]["Enums"]["unit_type"]
           updated_at: string
           water_charge: number
         }
         Insert: {
-          bathrooms?: number
-          bedrooms?: number
           block_id?: string | null
           created_at?: string
           deposit?: number
           floor?: number | null
+          floor_level?: Database["public"]["Enums"]["floor_level"]
           garbage_charge?: number
           house_number: string
           id?: string
@@ -580,16 +645,16 @@ export type Database = {
           rent?: number
           service_charge?: number
           status?: Database["public"]["Enums"]["unit_status"]
+          unit_type?: Database["public"]["Enums"]["unit_type"]
           updated_at?: string
           water_charge?: number
         }
         Update: {
-          bathrooms?: number
-          bedrooms?: number
           block_id?: string | null
           created_at?: string
           deposit?: number
           floor?: number | null
+          floor_level?: Database["public"]["Enums"]["floor_level"]
           garbage_charge?: number
           house_number?: string
           id?: string
@@ -602,6 +667,7 @@ export type Database = {
           rent?: number
           service_charge?: number
           status?: Database["public"]["Enums"]["unit_status"]
+          unit_type?: Database["public"]["Enums"]["unit_type"]
           updated_at?: string
           water_charge?: number
         }
@@ -671,6 +737,7 @@ export type Database = {
         | "technician"
         | "security"
         | "tenant"
+      floor_level: "ground" | "first" | "second" | "third" | "fourth" | "fifth"
       invoice_status: "unpaid" | "partial" | "paid" | "overdue" | "void"
       lease_status: "active" | "pending" | "ended" | "terminated"
       payment_method: "cash" | "cheque" | "bank_transfer" | "mpesa" | "other"
@@ -686,6 +753,7 @@ export type Database = {
         | "reserved"
         | "maintenance"
         | "unavailable"
+      unit_type: "single_room" | "bedsitter" | "double_room"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -822,6 +890,7 @@ export const Constants = {
         "security",
         "tenant",
       ],
+      floor_level: ["ground", "first", "second", "third", "fourth", "fifth"],
       invoice_status: ["unpaid", "partial", "paid", "overdue", "void"],
       lease_status: ["active", "pending", "ended", "terminated"],
       payment_method: ["cash", "cheque", "bank_transfer", "mpesa", "other"],
@@ -839,6 +908,7 @@ export const Constants = {
         "maintenance",
         "unavailable",
       ],
+      unit_type: ["single_room", "bedsitter", "double_room"],
     },
   },
 } as const
