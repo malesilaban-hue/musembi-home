@@ -447,3 +447,33 @@
   }
 }
 
+
+/* Per-property color themes — override --primary */
+:root[data-property-theme="orange"] {
+  --primary: oklch(0.72 0.18 55);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.72 0.18 55);
+  --sidebar-primary: oklch(0.72 0.18 55);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+}
+:root[data-property-theme="green"] {
+  --primary: oklch(0.62 0.15 155);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.62 0.15 155);
+  --sidebar-primary: oklch(0.62 0.15 155);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+}
+:root[data-property-theme="blue"] {
+  --primary: oklch(0.55 0.17 245);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.55 0.17 245);
+  --sidebar-primary: oklch(0.55 0.17 245);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+}
+:root[data-property-theme="purple"] {
+  --primary: oklch(0.55 0.19 305);
+  --primary-foreground: oklch(0.99 0 0);
+  --ring: oklch(0.55 0.19 305);
+  --sidebar-primary: oklch(0.55 0.19 305);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+}

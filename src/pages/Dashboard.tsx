@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, DoorOpen, DoorClosed, Wallet, Users, FileSignature, ReceiptText, AlertTriangle } from "lucide-react";
+import { Building2, DoorOpen, DoorClosed, Wallet, Users, FileSignature, ReceiptText, AlertTriangle, TrendingUp } from "lucide-react";
 import { KES } from "@/lib/format";
 
 interface Stats {
@@ -11,6 +11,8 @@ interface Stats {
   vacant: number;
   expected_rent: number;
   monthly_expected_rent: number;
+  collected_month: number;
+  collected_today: number;
   tenants: number;
   active_leases: number;
   outstanding: number;
@@ -25,75 +27,98 @@ export default function Dashboard() {
 
   useEffect(() => {
     document.title = "Dashboard · MUSEMBI PMS";
-    if (isTenant) {
-      loadTenantDashboard();
-    } else {
-      loadStaffDashboard();
-    }
+    const load = () => {
+      if (isTenant) void loadTenantDashboard();
+      else void loadStaffDashboard();
+    };
+    load();
+    const ch = supabase
+      .channel("dash-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "leases" }, load)
+      .on("postgres_changes", { event: "*", schema: "public", table: "units" }, load)
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTenant, isCaretaker]);
 
   const loadTenantDashboard = async () => {
-    // For tenants, show their lease, unit, and payment info
     const [leaseRes, payRes] = await Promise.all([
       supabase
         .from("leases")
         .select("id,start_date,monthly_rent,units(house_number,unit_type,floor_level,properties(name))")
         .eq("status", "active")
         .maybeSingle(),
-      supabase.from("payments").select("amount").eq("tenant_id", user?.id || ""),
+      supabase.from("payments").select("amount,paid_at").eq("tenant_id", user?.id || ""),
     ]);
 
     if (leaseRes.data) {
-      const totalPaid = (payRes.data ?? []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const pays = payRes.data ?? [];
+      const totalPaid = pays.reduce((s, p) => s + Number(p.amount || 0), 0);
+      const collectedMonth = pays
+        .filter((p) => new Date(p.paid_at) >= monthStart)
+        .reduce((s, p) => s + Number(p.amount || 0), 0);
+      const collectedToday = pays
+        .filter((p) => new Date(p.paid_at) >= todayStart)
+        .reduce((s, p) => s + Number(p.amount || 0), 0);
       setStats({
         properties: 0,
         units: 0,
         vacant: 0,
         expected_rent: Number(leaseRes.data.monthly_rent || 0),
+        monthly_expected_rent: Number(leaseRes.data.monthly_rent || 0),
+        collected_month: collectedMonth,
+        collected_today: collectedToday,
         tenants: 0,
         active_leases: 1,
-        outstanding: 0,
+        outstanding: Math.max(0, Number(leaseRes.data.monthly_rent || 0) - totalPaid),
         overdue: 0,
       });
     }
   };
 
   const loadStaffDashboard = async () => {
-    let cancelled = false;
-    (async () => {
-      const [pCount, uRes, tCount, lCount, invRes] = await Promise.all([
-        supabase.from("properties").select("*", { count: "exact", head: true }),
-        supabase.from("units").select("status,rent"),
-        supabase.from("tenants").select("*", { count: "exact", head: true }),
-        supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active"),
-        supabase.from("invoices").select("balance,status"),
-      ]);
-      if (cancelled) return;
-      const uList = uRes.data ?? [];
-      const inv = invRes.data ?? [];
-      
-      // Current month expected rent
-      const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      
-      setStats({
-        properties: pCount.count ?? 0,
-        units: uList.length,
-        vacant: uList.filter((u) => u.status === "vacant").length,
-        expected_rent: uList
-          .filter((u) => u.status === "occupied")
-          .reduce((sum, u) => sum + Number(u.rent || 0), 0),
-        monthly_expected_rent: uList
-          .filter((u) => u.status === "occupied")
-          .reduce((sum, u) => sum + Number(u.rent || 0), 0),
-        tenants: tCount.count ?? 0,
-        active_leases: lCount.count ?? 0,
-        outstanding: inv.reduce((s, i) => s + Number(i.balance || 0), 0),
-        overdue: inv.filter((i) => i.status === "overdue").length,
-      });
-    })();
-    return () => { cancelled = true; };
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const [pCount, uRes, tCount, lCount, invRes, monthPayRes, todayPayRes] = await Promise.all([
+      supabase.from("properties").select("*", { count: "exact", head: true }),
+      supabase.from("units").select("status,rent"),
+      supabase.from("tenants").select("*", { count: "exact", head: true }),
+      supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active"),
+      supabase.from("invoices").select("balance,status"),
+      supabase.from("payments").select("amount").gte("paid_at", monthStart),
+      supabase.from("payments").select("amount").gte("paid_at", todayStart),
+    ]);
+    const uList = uRes.data ?? [];
+    const inv = invRes.data ?? [];
+    const monthPay = monthPayRes.data ?? [];
+    const todayPay = todayPayRes.data ?? [];
+
+    setStats({
+      properties: pCount.count ?? 0,
+      units: uList.length,
+      vacant: uList.filter((u) => u.status === "vacant").length,
+      expected_rent: uList
+        .filter((u) => u.status === "occupied")
+        .reduce((sum, u) => sum + Number(u.rent || 0), 0),
+      monthly_expected_rent: uList
+        .filter((u) => u.status === "occupied")
+        .reduce((sum, u) => sum + Number(u.rent || 0), 0),
+      collected_month: monthPay.reduce((s, p) => s + Number(p.amount || 0), 0),
+      collected_today: todayPay.reduce((s, p) => s + Number(p.amount || 0), 0),
+      tenants: tCount.count ?? 0,
+      active_leases: lCount.count ?? 0,
+      outstanding: inv.reduce((s, i) => s + Number(i.balance || 0), 0),
+      overdue: inv.filter((i) => i.status === "overdue").length,
+    });
+  };
   };
 
   const staffCards = [

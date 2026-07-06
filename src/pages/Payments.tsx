@@ -38,7 +38,11 @@ interface Row {
   reference: string | null;
   reason: string | null;
   paid_at: string;
+  tenant_id: string;
+  lease_id: string | null;
   tenants: { id: string; full_name: string } | null;
+  unit_label: string | null;
+  property_name: string | null;
 }
 
 interface Tenant {
@@ -64,42 +68,74 @@ export default function Payments() {
   const [open, setOpen] = useState(false);
 
   const reload = async () => {
-    // First, get all payments with tenant data
     const { data: paymentsData, error: paymentsError } = await supabase
       .from("payments")
-      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id")
+      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
       .order("paid_at", { ascending: false });
-    
+
     if (paymentsError) return toast.error(paymentsError.message);
-    
+
     if (!paymentsData || paymentsData.length === 0) {
       setItems([]);
       return;
     }
-    
-    // Get tenant IDs to fetch tenant data
-    const tenantIds = [...new Set((paymentsData as any[]).map(p => p.tenant_id))];
-    
-    // Fetch tenant data
-    const { data: tenantsData } = await supabase
-      .from("tenants")
-      .select("id,full_name")
-      .in("id", tenantIds);
-    
-    const tenantMap = new Map((tenantsData ?? []).map(t => [t.id, t]));
-    
-    // Combine the data
-    const formatted = (paymentsData as any[]).map((payment) => ({
-      ...payment,
-      tenants: tenantMap.get(payment.tenant_id) || null,
-    }));
-    
-    setItems(formatted as Row[]);
+
+    const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id))];
+    const leaseIds = [...new Set(paymentsData.map((p) => p.lease_id).filter(Boolean) as string[])];
+
+    const [tenantsRes, leasesRes] = await Promise.all([
+      supabase.from("tenants").select("id,full_name").in("id", tenantIds),
+      leaseIds.length
+        ? supabase
+            .from("leases")
+            .select("id,units(house_number,properties(name))")
+            .in("id", leaseIds)
+        : Promise.resolve({ data: [] as unknown[] }),
+    ]);
+
+    const tenantMap = new Map((tenantsRes.data ?? []).map((t) => [t.id, t]));
+    const leaseMap = new Map(
+      ((leasesRes.data ?? []) as Array<{
+        id: string;
+        units: { house_number: string; properties: { name: string } | null } | null;
+      }>).map((l) => [l.id, l]),
+    );
+
+    const formatted: Row[] = paymentsData.map((p) => {
+      const lease = p.lease_id ? leaseMap.get(p.lease_id) : null;
+      return {
+        id: p.id,
+        receipt_number: p.receipt_number,
+        amount: Number(p.amount),
+        method: p.method,
+        reference: p.reference,
+        reason: p.reason,
+        paid_at: p.paid_at,
+        tenant_id: p.tenant_id,
+        lease_id: p.lease_id,
+        tenants: tenantMap.get(p.tenant_id) ?? null,
+        unit_label: lease?.units?.house_number ?? null,
+        property_name: lease?.units?.properties?.name ?? null,
+      };
+    });
+
+    setItems(formatted);
   };
 
   useEffect(() => {
     document.title = "Payments · MUSEMBI PMS";
     void reload();
+    const ch = supabase
+      .channel("payments-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "payments" },
+        () => void reload(),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
   }, []);
 
   const filtered = (items ?? []).filter((r) => {
@@ -166,8 +202,11 @@ export default function Payments() {
                   <div className="min-w-0 flex-1">
                     <div className="font-medium">{r.receipt_number}</div>
                     <div className="text-xs text-muted-foreground">
-                      {r.tenants?.full_name ?? "—"} · {fmtDateTime(r.paid_at)}
+                      {r.tenants?.full_name ?? "—"}
+                      {r.unit_label && <> · Unit {r.unit_label}</>}
+                      {r.property_name && <> · {r.property_name}</>}
                     </div>
+                    <div className="text-xs text-muted-foreground">{fmtDateTime(r.paid_at)}</div>
                     {r.reference && <div className="text-xs text-muted-foreground">Ref: {r.reference}</div>}
                     {r.reason && <div className="text-xs text-muted-foreground italic">Note: {r.reason}</div>}
                   </div>
@@ -196,7 +235,9 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
     watch,
     setValue,
     formState: { errors, isSubmitting },
-  } = useForm<PaymentFormValues>({ resolver: zodResolver(paymentSchema) });
+  } = useForm<z.input<typeof paymentSchema>, unknown, PaymentFormValues>({
+    resolver: zodResolver(paymentSchema),
+  });
 
   const selectedTenantId = watch("tenant_id");
 
