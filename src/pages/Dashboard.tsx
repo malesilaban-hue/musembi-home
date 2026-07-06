@@ -119,7 +119,6 @@ export default function Dashboard() {
       overdue: inv.filter((i) => i.status === "overdue").length,
     });
   };
-  };
 
   const staffCards = [
     { label: "Properties", value: stats?.properties ?? "—", icon: Building2 },
@@ -128,7 +127,8 @@ export default function Dashboard() {
     { label: "Tenants", value: stats?.tenants ?? "—", icon: Users },
     { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
     { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
-    { label: "This month", value: stats ? KES(stats.monthly_expected_rent) : "—", icon: ReceiptText },
+    { label: "Collected today", value: stats ? KES(stats.collected_today) : "—", icon: TrendingUp },
+    { label: "Collected this month", value: stats ? KES(stats.collected_month) : "—", icon: TrendingUp },
     { label: "Outstanding balance", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
     { label: "Overdue invoices", value: stats?.overdue ?? "—", icon: AlertTriangle },
   ];
@@ -136,15 +136,18 @@ export default function Dashboard() {
   const caretakerCards = [
     { label: "Properties", value: stats?.properties ?? "—", icon: Building2 },
     { label: "Total units", value: stats?.units ?? "—", icon: DoorClosed },
+    { label: "Vacant units", value: stats?.vacant ?? "—", icon: DoorOpen },
     { label: "Occupied units", value: stats ? (stats.units - stats.vacant) : "—", icon: Users },
     { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
-    { label: "This month", value: stats ? KES(stats.monthly_expected_rent) : "—", icon: ReceiptText },
+    { label: "Collected this month", value: stats ? KES(stats.collected_month) : "—", icon: TrendingUp },
+    { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
+    { label: "Outstanding", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
   ];
 
   const tenantCards = [
     { label: "Your rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
-    { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
-    { label: "Total paid", value: "—", icon: ReceiptText },
+    { label: "Paid this month", value: stats ? KES(stats.collected_month) : "—", icon: TrendingUp },
+    { label: "Outstanding", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
   ];
 
   const cards = isTenant ? tenantCards : isCaretaker ? caretakerCards : staffCards;
