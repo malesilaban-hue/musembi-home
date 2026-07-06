@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Users, Loader2, Phone } from "lucide-react";
+import { Plus, Users, Loader2, Phone, Home } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -31,19 +31,29 @@ interface Tenant {
   created_at: string;
 }
 
+interface Unit {
+  id: string;
+  house_number: string;
+  unit_type: string;
+  floor_level: string;
+  rent: number;
+  status: string;
+  properties: {
+    name: string;
+  } | null;
+}
+
 const schema = z.object({
   full_name: z.string().trim().min(2, "Full name required").max(120),
   phone: z.string().trim().min(7, "Phone required").max(20),
   alt_phone: z.string().trim().max(20).optional().or(z.literal("")),
   email: z.string().trim().email().max(255).optional().or(z.literal("")),
   national_id: z.string().trim().max(30).optional().or(z.literal("")),
-  kra_pin: z.string().trim().max(30).optional().or(z.literal("")),
   emergency_name: z.string().trim().max(120).optional().or(z.literal("")),
   emergency_phone: z.string().trim().max(20).optional().or(z.literal("")),
   emergency_relation: z.string().trim().max(60).optional().or(z.literal("")),
   occupation: z.string().trim().max(120).optional().or(z.literal("")),
-  employer: z.string().trim().max(120).optional().or(z.literal("")),
-  notes: z.string().trim().max(1000).optional().or(z.literal("")),
+  unit_id: z.string().optional().or(z.literal("")),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -150,26 +160,71 @@ export default function Tenants() {
 }
 
 function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => void }) {
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [unitSearch, setUnitSearch] = useState("");
+  const [showUnitList, setShowUnitList] = useState(false);
+
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
+
+  const selectedUnitId = watch("unit_id");
+
+  useEffect(() => {
+    const loadUnits = async () => {
+      const { data, error } = await supabase
+        .from("units")
+        .select("id,house_number,unit_type,floor_level,rent,status,properties(name)")
+        .order("house_number");
+      if (!error) setUnits(data ?? []);
+    };
+    void loadUnits();
+  }, []);
+
+  const filteredUnits = units.filter((u) =>
+    u.house_number.toLowerCase().includes(unitSearch.toLowerCase())
+  );
 
   const onSubmit = async (values: FormValues) => {
     const payload: Record<string, unknown> = { created_by: userId };
     for (const [k, v] of Object.entries(values)) {
+      if (k === "unit_id") continue; // Handle separately
       payload[k] = v === "" ? null : v;
     }
     payload.full_name = values.full_name;
     payload.phone = values.phone;
-    const { error } = await supabase.from("tenants").insert(payload as never);
+
+    const { error, data } = await supabase.from("tenants").insert(payload as never).select("id");
+
     if (error) return toast.error(error.message);
-    toast.success("Tenant registered");
+
+    // Assign unit if selected
+    if (values.unit_id && data && data.length > 0) {
+      const tenantId = data[0].id;
+      const { error: assignError } = await supabase
+        .from("units")
+        .update({ status: "occupied", tenant_id: tenantId })
+        .eq("id", values.unit_id);
+
+      if (assignError) {
+        toast.warning("Tenant created but unit assignment failed");
+      } else {
+        toast.success("Tenant registered and unit assigned");
+      }
+    } else {
+      toast.success("Tenant registered");
+    }
+
     reset();
     onCreated();
   };
+
+  const selectedUnit = units.find((u) => u.id === selectedUnitId);
 
   return (
     <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -182,7 +237,7 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
           <Field label="Full name" error={errors.full_name?.message}>
             <Input {...register("full_name")} />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone" error={errors.phone?.message}>
             <Input {...register("phone")} placeholder="+2547…" />
           </Field>
           <Field label="Alt phone">
@@ -194,9 +249,6 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
           <Field label="National ID">
             <Input {...register("national_id")} />
           </Field>
-          <Field label="KRA PIN">
-            <Input {...register("kra_pin")} />
-          </Field>
           <Field label="Emergency name">
             <Input {...register("emergency_name")} />
           </Field>
@@ -206,18 +258,71 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
           <Field label="Emergency relation">
             <Input {...register("emergency_relation")} placeholder="Spouse / Parent…" />
           </Field>
-          <Field label="Occupation">
-            <Input {...register("occupation")} />
-          </Field>
           <div className="sm:col-span-2">
-            <Field label="Employer">
-              <Input {...register("employer")} />
+            <Field label="Occupation">
+              <Input {...register("occupation")} />
             </Field>
           </div>
-          <div className="sm:col-span-2">
-            <Field label="Notes">
-              <Textarea rows={2} {...register("notes")} />
-            </Field>
+
+          {/* Unit Assignment Section */}
+          <div className="sm:col-span-2 border-t pt-4">
+            <div className="space-y-3">
+              <Label className="font-semibold text-sm">Assign Unit (Optional)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="unit-search" className="text-xs">
+                  Search unit by number
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="unit-search"
+                    placeholder="Search unit number (e.g., A-01)…"
+                    value={unitSearch}
+                    onChange={(e) => {
+                      setUnitSearch(e.target.value);
+                      setShowUnitList(true);
+                    }}
+                    onFocus={() => setShowUnitList(true)}
+                  />
+                  {showUnitList && unitSearch && filteredUnits.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded-md border border-input bg-popover p-2 shadow-md">
+                      {filteredUnits.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            setValue("unit_id", u.id);
+                            setUnitSearch(u.house_number);
+                            setShowUnitList(false);
+                          }}
+                          className="block w-full rounded px-2 py-2 text-left text-sm hover:bg-accent"
+                        >
+                          <div className="font-medium">{u.house_number}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {u.unit_type} • Floor {u.floor_level} • KES {u.rent?.toLocaleString()}
+                            {u.properties?.name && ` • ${u.properties.name}`}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {selectedUnit && (
+                  <div className="flex items-start gap-2 rounded-lg bg-muted p-3">
+                    <Home className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{selectedUnit.house_number}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedUnit.unit_type} • Floor {selectedUnit.floor_level} • KES{" "}
+                        {selectedUnit.rent?.toLocaleString()}
+                      </div>
+                      {selectedUnit.properties?.name && (
+                        <div className="text-xs text-muted-foreground">{selectedUnit.properties.name}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
         <DialogFooter className="mt-6">

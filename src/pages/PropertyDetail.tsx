@@ -22,13 +22,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Loader2, DoorClosed } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, DoorClosed, Pencil } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 
 type UnitStatus = "vacant" | "occupied" | "reserved" | "maintenance" | "unavailable";
+type UnitType = "single_room" | "bedsitter" | "double_room";
+type FloorLevel = "ground" | "first" | "second" | "third" | "fourth" | "fifth";
+
 interface Property {
   id: string;
   name: string;
@@ -39,18 +42,17 @@ interface Property {
 interface Unit {
   id: string;
   house_number: string;
-  floor: number | null;
-  bedrooms: number;
-  bathrooms: number;
+  unit_type: UnitType;
+  floor_level: FloorLevel;
   rent: number;
+  deposit: number;
   status: UnitStatus;
 }
 
 const unitSchema = z.object({
   house_number: z.string().trim().min(1, "Required").max(30),
-  floor: z.coerce.number().int().min(0).max(200).optional(),
-  bedrooms: z.coerce.number().int().min(0).max(20),
-  bathrooms: z.coerce.number().int().min(0).max(20),
+  unit_type: z.enum(["single_room", "bedsitter", "double_room"]),
+  floor_level: z.enum(["ground", "first", "second", "third", "fourth", "fifth"]),
   rent: z.coerce.number().min(0).max(10_000_000),
   deposit: z.coerce.number().min(0).max(10_000_000),
   status: z.enum(["vacant", "occupied", "reserved", "maintenance", "unavailable"]),
@@ -68,10 +70,12 @@ const statusColor: Record<UnitStatus, string> = {
 export default function PropertyDetail() {
   const { id } = useParams<{ id: string }>();
   const { hasRole } = useAuth();
-  const canManage = hasRole(["super_admin", "landlord", "caretaker"]);
+  const canManage = hasRole(["super_admin", "landlord"]);
   const [property, setProperty] = useState<Property | null>(null);
   const [units, setUnits] = useState<Unit[] | null>(null);
   const [open, setOpen] = useState(false);
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -85,7 +89,7 @@ export default function PropertyDetail() {
       supabase.from("properties").select("id,name,address,city,county").eq("id", id!).maybeSingle(),
       supabase
         .from("units")
-        .select("id,house_number,floor,bedrooms,bathrooms,rent,status")
+        .select("id,house_number,unit_type,floor_level,rent,deposit,status")
         .eq("property_id", id!)
         .order("house_number"),
     ]);
@@ -156,27 +160,73 @@ export default function PropertyDetail() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {units.map((u) => (
-              <Card key={u.id}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-base">Unit {u.house_number}</CardTitle>
-                  <Badge className={statusColor[u.status]} variant="secondary">
-                    {u.status}
-                  </Badge>
-                </CardHeader>
-                <CardContent className="space-y-1 text-sm text-muted-foreground">
-                  <div>
-                    {u.bedrooms} bed · {u.bathrooms} bath
-                    {u.floor != null && ` · Floor ${u.floor}`}
+          <div className="space-y-6">
+            {["ground", "first", "second", "third", "fourth", "fifth"].map((floor) => {
+              const floorUnits = units.filter((u) => u.floor_level === floor);
+              if (floorUnits.length === 0) return null;
+              return (
+                <div key={floor}>
+                  <h3 className="mb-2 text-sm font-medium capitalize text-foreground">
+                    {floor === "ground" ? "Ground Floor" : `${floor.charAt(0).toUpperCase() + floor.slice(1)} Floor`} ({floorUnits.length})
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {floorUnits.map((u) => (
+                      <Card key={u.id} className="relative">
+                        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                          <CardTitle className="text-base">Unit {u.house_number}</CardTitle>
+                          <div className="flex items-center gap-2">
+                            <Badge className={statusColor[u.status]} variant="secondary">
+                              {u.status}
+                            </Badge>
+                            {canManage && (
+                              <Dialog open={editOpen && editingUnit?.id === u.id} onOpenChange={(open) => {
+                                if (!open) setEditingUnit(null);
+                                setEditOpen(open);
+                              }}>
+                                <DialogTrigger asChild>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    onClick={() => setEditingUnit(u)}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                {editingUnit?.id === u.id && (
+                                  <EditUnitDialog
+                                    unit={editingUnit}
+                                    onSaved={() => {
+                                      setEditOpen(false);
+                                      setEditingUnit(null);
+                                      void loadAll();
+                                    }}
+                                  />
+                                )}
+                              </Dialog>
+                            )}
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-1 text-sm text-muted-foreground">
+                          <div>
+                            {u.unit_type.replace(/_/g, " ")} · {u.floor_level} floor
+                          </div>
+                          <div className="font-medium text-foreground">
+                            KES {Number(u.rent).toLocaleString("en-KE")}
+                            <span className="text-xs font-normal text-muted-foreground"> / month</span>
+                          </div>
+                          {u.deposit > 0 && (
+                            <div className="text-xs">
+                              Deposit: KES {Number(u.deposit).toLocaleString("en-KE")}
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                  <div className="font-medium text-foreground">
-                    KES {Number(u.rent).toLocaleString("en-KE")}
-                    <span className="text-xs font-normal text-muted-foreground"> / month</span>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -197,32 +247,47 @@ function UnitDialog({
     setValue,
     watch,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<UnitValues>({
     resolver: zodResolver(unitSchema),
-    defaultValues: { status: "vacant", bedrooms: 1, bathrooms: 1, rent: 0, deposit: 0 },
+    defaultValues: { status: "vacant", unit_type: "single_room", floor_level: "ground", rent: 0, deposit: 0 },
   });
 
   const status = watch("status");
+  const unitType = watch("unit_type");
+  const floorLevel = watch("floor_level");
 
   const onSubmit = async (v: UnitValues) => {
-    const { error } = await supabase.from("units").insert({
-      property_id: propertyId,
-      house_number: v.house_number,
-      floor: v.floor ?? null,
-      bedrooms: v.bedrooms,
-      bathrooms: v.bathrooms,
-      rent: v.rent,
-      deposit: v.deposit,
-      status: v.status,
-    });
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      // Explicitly cast enum values to ensure they're correct
+      const payload = {
+        property_id: propertyId,
+        house_number: v.house_number,
+        unit_type: v.unit_type || 'single_room',
+        floor_level: v.floor_level || 'ground',
+        rent: Number(v.rent) || 0,
+        deposit: Number(v.deposit) || 0,
+        status: v.status || 'vacant',
+      };
+
+      console.log("Inserting unit with payload:", payload);
+
+      const { error } = await supabase.from("units").insert([payload]);
+      
+      if (error) {
+        console.error("Insert error:", error);
+        toast.error(`Failed to create unit: ${error.message}`);
+        return;
+      }
+      
+      toast.success("Unit created successfully");
+      reset();
+      onCreated();
+    } catch (err) {
+      console.error("Exception:", err);
+      toast.error(err instanceof Error ? err.message : "Unknown error");
     }
-    toast.success("Unit created");
-    reset();
-    onCreated();
   };
 
   return (
@@ -240,22 +305,45 @@ function UnitDialog({
             )}
           </div>
           <div className="space-y-1.5">
+            <Label htmlFor="u-type">Unit type</Label>
+            <Select value={unitType} onValueChange={(v) => setValue("unit_type", v as UnitType)}>
+              <SelectTrigger id="u-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="single_room">Single room</SelectItem>
+                <SelectItem value="bedsitter">Bedsitter</SelectItem>
+                <SelectItem value="double_room">Double room</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.unit_type && (
+              <p className="text-xs text-destructive">{errors.unit_type.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="u-floor">Floor</Label>
-            <Input id="u-floor" type="number" min={0} {...register("floor")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="u-bed">Bedrooms</Label>
-            <Input id="u-bed" type="number" min={0} {...register("bedrooms")} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="u-bath">Bathrooms</Label>
-            <Input id="u-bath" type="number" min={0} {...register("bathrooms")} />
+            <Select value={floorLevel} onValueChange={(v) => setValue("floor_level", v as FloorLevel)}>
+              <SelectTrigger id="u-floor">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ground">Ground floor</SelectItem>
+                <SelectItem value="first">First floor</SelectItem>
+                <SelectItem value="second">Second floor</SelectItem>
+                <SelectItem value="third">Third floor</SelectItem>
+                <SelectItem value="fourth">Fourth floor</SelectItem>
+                <SelectItem value="fifth">Fifth floor</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.floor_level && (
+              <p className="text-xs text-destructive">{errors.floor_level.message}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="u-rent">Rent (KES)</Label>
             <Input id="u-rent" type="number" min={0} step="0.01" {...register("rent")} />
           </div>
-          <div className="space-y-1.5">
+          <div className="col-span-2 space-y-1.5">
             <Label htmlFor="u-dep">Deposit (KES)</Label>
             <Input id="u-dep" type="number" min={0} step="0.01" {...register("deposit")} />
           </div>
@@ -279,6 +367,131 @@ function UnitDialog({
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Create unit
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+function EditUnitDialog({ unit, onSaved }: { unit: Unit; onSaved: () => void }) {
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<UnitValues>({
+    resolver: zodResolver(unitSchema),
+    defaultValues: {
+      house_number: unit.house_number,
+      unit_type: unit.unit_type,
+      floor_level: unit.floor_level,
+      rent: unit.rent,
+      deposit: unit.deposit,
+      status: unit.status,
+    },
+  });
+
+  const status = watch("status");
+  const unitType = watch("unit_type");
+  const floorLevel = watch("floor_level");
+
+  const onSubmit = async (v: UnitValues) => {
+    const { error } = await supabase.from("units").update({
+      house_number: v.house_number,
+      unit_type: v.unit_type,
+      floor_level: v.floor_level,
+      rent: v.rent,
+      deposit: v.deposit,
+      status: v.status,
+    }).eq("id", unit.id);
+
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success("Unit updated");
+    onSaved();
+  };
+
+  return (
+    <DialogContent>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <DialogHeader>
+          <DialogTitle>Edit unit {unit.house_number}</DialogTitle>
+        </DialogHeader>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="e-hn">House number</Label>
+            <Input id="e-hn" placeholder="A-01" {...register("house_number")} />
+            {errors.house_number && (
+              <p className="text-xs text-destructive">{errors.house_number.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="e-type">Unit type</Label>
+            <Select value={unitType} onValueChange={(v) => setValue("unit_type", v as UnitType)}>
+              <SelectTrigger id="e-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="single_room">Single room</SelectItem>
+                <SelectItem value="bedsitter">Bedsitter</SelectItem>
+                <SelectItem value="double_room">Double room</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.unit_type && (
+              <p className="text-xs text-destructive">{errors.unit_type.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="e-floor">Floor</Label>
+            <Select value={floorLevel} onValueChange={(v) => setValue("floor_level", v as FloorLevel)}>
+              <SelectTrigger id="e-floor">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ground">Ground floor</SelectItem>
+                <SelectItem value="first">First floor</SelectItem>
+                <SelectItem value="second">Second floor</SelectItem>
+                <SelectItem value="third">Third floor</SelectItem>
+                <SelectItem value="fourth">Fourth floor</SelectItem>
+                <SelectItem value="fifth">Fifth floor</SelectItem>
+              </SelectContent>
+            </Select>
+            {errors.floor_level && (
+              <p className="text-xs text-destructive">{errors.floor_level.message}</p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="e-rent">Rent (KES)</Label>
+            <Input id="e-rent" type="number" min={0} step="0.01" {...register("rent")} />
+          </div>
+          <div className="col-span-2 space-y-1.5">
+            <Label htmlFor="e-dep">Deposit (KES)</Label>
+            <Input id="e-dep" type="number" min={0} step="0.01" {...register("deposit")} />
+          </div>
+          <div className="col-span-2 space-y-1.5">
+            <Label>Status</Label>
+            <Select value={status} onValueChange={(v) => setValue("status", v as UnitStatus)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="vacant">Vacant</SelectItem>
+                <SelectItem value="occupied">Occupied</SelectItem>
+                <SelectItem value="reserved">Reserved</SelectItem>
+                <SelectItem value="maintenance">Maintenance</SelectItem>
+                <SelectItem value="unavailable">Unavailable</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter className="mt-6">
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save changes
           </Button>
         </DialogFooter>
       </form>

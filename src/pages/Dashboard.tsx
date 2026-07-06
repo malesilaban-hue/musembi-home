@@ -10,6 +10,7 @@ interface Stats {
   units: number;
   vacant: number;
   expected_rent: number;
+  monthly_expected_rent: number;
   tenants: number;
   active_leases: number;
   outstanding: number;
@@ -19,9 +20,45 @@ interface Stats {
 export default function Dashboard() {
   const { user, roles } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
+  const isTenant = roles.includes("tenant");
+  const isCaretaker = roles.includes("caretaker");
 
   useEffect(() => {
     document.title = "Dashboard · MUSEMBI PMS";
+    if (isTenant) {
+      loadTenantDashboard();
+    } else {
+      loadStaffDashboard();
+    }
+  }, [isTenant, isCaretaker]);
+
+  const loadTenantDashboard = async () => {
+    // For tenants, show their lease, unit, and payment info
+    const [leaseRes, payRes] = await Promise.all([
+      supabase
+        .from("leases")
+        .select("id,start_date,monthly_rent,units(house_number,unit_type,floor_level,properties(name))")
+        .eq("status", "active")
+        .maybeSingle(),
+      supabase.from("payments").select("amount").eq("tenant_id", user?.id || ""),
+    ]);
+
+    if (leaseRes.data) {
+      const totalPaid = (payRes.data ?? []).reduce((sum, p) => sum + Number(p.amount || 0), 0);
+      setStats({
+        properties: 0,
+        units: 0,
+        vacant: 0,
+        expected_rent: Number(leaseRes.data.monthly_rent || 0),
+        tenants: 0,
+        active_leases: 1,
+        outstanding: 0,
+        overdue: 0,
+      });
+    }
+  };
+
+  const loadStaffDashboard = async () => {
     let cancelled = false;
     (async () => {
       const [pCount, uRes, tCount, lCount, invRes] = await Promise.all([
@@ -34,11 +71,20 @@ export default function Dashboard() {
       if (cancelled) return;
       const uList = uRes.data ?? [];
       const inv = invRes.data ?? [];
+      
+      // Current month expected rent
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
       setStats({
         properties: pCount.count ?? 0,
         units: uList.length,
         vacant: uList.filter((u) => u.status === "vacant").length,
         expected_rent: uList
+          .filter((u) => u.status === "occupied")
+          .reduce((sum, u) => sum + Number(u.rent || 0), 0),
+        monthly_expected_rent: uList
           .filter((u) => u.status === "occupied")
           .reduce((sum, u) => sum + Number(u.rent || 0), 0),
         tenants: tCount.count ?? 0,
@@ -48,18 +94,35 @@ export default function Dashboard() {
       });
     })();
     return () => { cancelled = true; };
-  }, []);
+  };
 
-  const cards = [
+  const staffCards = [
     { label: "Properties", value: stats?.properties ?? "—", icon: Building2 },
     { label: "Total units", value: stats?.units ?? "—", icon: DoorClosed },
     { label: "Vacant units", value: stats?.vacant ?? "—", icon: DoorOpen },
     { label: "Tenants", value: stats?.tenants ?? "—", icon: Users },
     { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
     { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
+    { label: "This month", value: stats ? KES(stats.monthly_expected_rent) : "—", icon: ReceiptText },
     { label: "Outstanding balance", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
     { label: "Overdue invoices", value: stats?.overdue ?? "—", icon: AlertTriangle },
   ];
+
+  const caretakerCards = [
+    { label: "Properties", value: stats?.properties ?? "—", icon: Building2 },
+    { label: "Total units", value: stats?.units ?? "—", icon: DoorClosed },
+    { label: "Occupied units", value: stats ? (stats.units - stats.vacant) : "—", icon: Users },
+    { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
+    { label: "This month", value: stats ? KES(stats.monthly_expected_rent) : "—", icon: ReceiptText },
+  ];
+
+  const tenantCards = [
+    { label: "Your rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
+    { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
+    { label: "Total paid", value: "—", icon: ReceiptText },
+  ];
+
+  const cards = isTenant ? tenantCards : isCaretaker ? caretakerCards : staffCards;
 
   return (
     <div className="space-y-6">

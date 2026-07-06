@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, Building2, Loader2, MapPin } from "lucide-react";
+import { Edit, Plus, Building2, Loader2, MapPin } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -45,6 +45,7 @@ export default function Properties() {
   const canCreate = hasRole(["super_admin", "landlord"]);
   const [items, setItems] = useState<Property[] | null>(null);
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = "Properties · MUSEMBI PMS";
@@ -73,7 +74,10 @@ export default function Properties() {
           </p>
         </div>
         {canCreate && (
-          <Dialog open={open} onOpenChange={setOpen}>
+          <Dialog open={open} onOpenChange={(isOpen) => {
+            setOpen(isOpen);
+            if (!isOpen) setEditingId(null);
+          }}>
             <DialogTrigger asChild>
               <Button>
                 <Plus className="mr-1 h-4 w-4" /> New property
@@ -81,8 +85,10 @@ export default function Properties() {
             </DialogTrigger>
             <PropertyDialog
               userId={user!.id}
+              propertyId={editingId}
               onCreated={() => {
                 setOpen(false);
+                setEditingId(null);
                 void reload();
               }}
             />
@@ -111,28 +117,42 @@ export default function Properties() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {items.map((p) => (
-            <Link key={p.id} to={`/properties/${p.id}`}>
-              <Card className="h-full transition-shadow hover:shadow-elegant">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Building2 className="h-4 w-4 text-primary" />
-                    {p.name}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-sm text-muted-foreground">
-                  {p.address || p.city || p.county ? (
-                    <div className="flex items-start gap-1.5">
-                      <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                      <span>
-                        {[p.address, p.city, p.county].filter(Boolean).join(", ")}
-                      </span>
-                    </div>
-                  ) : (
-                    <span className="italic">No address recorded</span>
-                  )}
-                </CardContent>
-              </Card>
-            </Link>
+            <div key={p.id} className="group relative">
+              <Link to={`/properties/${p.id}`}>
+                <Card className="h-full transition-shadow hover:shadow-elegant">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <Building2 className="h-4 w-4 text-primary" />
+                      {p.name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm text-muted-foreground">
+                    {p.address || p.city || p.county ? (
+                      <div className="flex items-start gap-1.5">
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <span>
+                          {[p.address, p.city, p.county].filter(Boolean).join(", ")}
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="italic">No address recorded</span>
+                    )}
+                  </CardContent>
+                </Card>
+              </Link>
+              {canCreate && (
+                <button
+                  onClick={() => {
+                    setEditingId(p.id);
+                    setOpen(true);
+                  }}
+                  className="absolute right-2 top-2 rounded-lg bg-background/80 p-1.5 opacity-0 transition-opacity hover:bg-muted group-hover:opacity-100"
+                  title="Edit property"
+                >
+                  <Edit className="h-4 w-4 text-primary" />
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -140,7 +160,7 @@ export default function Properties() {
   );
 }
 
-function PropertyDialog({ userId, onCreated }: { userId: string; onCreated: () => void }) {
+function PropertyDialog({ userId, onCreated, propertyId }: { userId: string; onCreated: () => void; propertyId?: string | null }) {
   const {
     register,
     handleSubmit,
@@ -148,20 +168,46 @@ function PropertyDialog({ userId, onCreated }: { userId: string; onCreated: () =
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
+  const isEditing = !!propertyId;
+
+  useEffect(() => {
+    if (isEditing && propertyId) {
+      (async () => {
+        const { data } = await supabase
+          .from("properties")
+          .select("name,address,city,county,notes")
+          .eq("id", propertyId)
+          .maybeSingle();
+        if (data) {
+          reset(data);
+        }
+      })();
+    } else {
+      reset({ name: "", address: "", city: "", county: "", notes: "" });
+    }
+  }, [isEditing, propertyId, reset]);
+
   const onSubmit = async (values: FormValues) => {
-    const { error } = await supabase.from("properties").insert({
-      owner_id: userId,
+    const payload = {
       name: values.name,
       address: values.address || null,
       city: values.city || null,
       county: values.county || null,
       notes: values.notes || null,
-    });
+    };
+
+    let error;
+    if (isEditing) {
+      ({ error } = await supabase.from("properties").update(payload).eq("id", propertyId!));
+    } else {
+      ({ error } = await supabase.from("properties").insert({ ...payload, owner_id: userId }));
+    }
+
     if (error) {
       toast.error(error.message);
       return;
     }
-    toast.success("Property created");
+    toast.success(isEditing ? "Property updated" : "Property created");
     reset();
     onCreated();
   };
@@ -170,8 +216,10 @@ function PropertyDialog({ userId, onCreated }: { userId: string; onCreated: () =
     <DialogContent>
       <form onSubmit={handleSubmit(onSubmit)}>
         <DialogHeader>
-          <DialogTitle>New property</DialogTitle>
-          <DialogDescription>Create a building or estate you manage.</DialogDescription>
+          <DialogTitle>{isEditing ? "Edit property" : "New property"}</DialogTitle>
+          <DialogDescription>
+            {isEditing ? "Update building or estate details." : "Create a building or estate you manage."}
+          </DialogDescription>
         </DialogHeader>
         <div className="mt-4 space-y-4">
           <div className="space-y-1.5">
@@ -201,7 +249,7 @@ function PropertyDialog({ userId, onCreated }: { userId: string; onCreated: () =
         <DialogFooter className="mt-6">
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create property
+            {isEditing ? "Update property" : "Create property"}
           </Button>
         </DialogFooter>
       </form>

@@ -1,11 +1,34 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Wallet } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, Wallet, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { fmtDateTime, KES } from "@/lib/format";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 
 interface Row {
   id: string;
@@ -13,24 +36,70 @@ interface Row {
   amount: number;
   method: string;
   reference: string | null;
+  reason: string | null;
   paid_at: string;
-  tenants: { full_name: string } | null;
+  tenants: { id: string; full_name: string } | null;
 }
 
+interface Tenant {
+  id: string;
+  full_name: string;
+}
+
+const paymentSchema = z.object({
+  tenant_id: z.string().min(1, "Tenant required"),
+  amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
+  reference: z.string().trim().max(100).optional().or(z.literal("")),
+  method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
+  paid_at: z.string().min(1, "Date required"),
+  reason: z.string().trim().max(255).optional().or(z.literal("")),
+});
+type PaymentFormValues = z.infer<typeof paymentSchema>;
+
 export default function Payments() {
+  const { hasRole } = useAuth();
+  const canRecord = hasRole(["super_admin", "landlord", "accountant", "caretaker"]);
   const [items, setItems] = useState<Row[] | null>(null);
   const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const reload = async () => {
+    // First, get all payments with tenant data
+    const { data: paymentsData, error: paymentsError } = await supabase
+      .from("payments")
+      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id")
+      .order("paid_at", { ascending: false });
+    
+    if (paymentsError) return toast.error(paymentsError.message);
+    
+    if (!paymentsData || paymentsData.length === 0) {
+      setItems([]);
+      return;
+    }
+    
+    // Get tenant IDs to fetch tenant data
+    const tenantIds = [...new Set((paymentsData as any[]).map(p => p.tenant_id))];
+    
+    // Fetch tenant data
+    const { data: tenantsData } = await supabase
+      .from("tenants")
+      .select("id,full_name")
+      .in("id", tenantIds);
+    
+    const tenantMap = new Map((tenantsData ?? []).map(t => [t.id, t]));
+    
+    // Combine the data
+    const formatted = (paymentsData as any[]).map((payment) => ({
+      ...payment,
+      tenants: tenantMap.get(payment.tenant_id) || null,
+    }));
+    
+    setItems(formatted as Row[]);
+  };
 
   useEffect(() => {
     document.title = "Payments · MUSEMBI PMS";
-    (async () => {
-      const { data, error } = await supabase
-        .from("payments")
-        .select("id,receipt_number,amount,method,reference,paid_at,tenants(full_name)")
-        .order("paid_at", { ascending: false });
-      if (error) return toast.error(error.message);
-      setItems((data as unknown as Row[]) ?? []);
-    })();
+    void reload();
   }, []);
 
   const filtered = (items ?? []).filter((r) => {
@@ -52,9 +121,26 @@ export default function Payments() {
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Payments</h1>
           <p className="mt-1 text-sm text-muted-foreground">All receipted payments across tenants.</p>
         </div>
-        <div className="text-right">
-          <div className="text-xs text-muted-foreground">Total shown</div>
-          <div className="text-lg font-bold text-primary">{KES(total)}</div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">Total shown</div>
+            <div className="text-lg font-bold text-primary">{KES(total)}</div>
+          </div>
+          {canRecord && (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm">
+                  <Plus className="mr-1 h-4 w-4" /> Record payment
+                </Button>
+              </DialogTrigger>
+              <RecordPaymentDialog
+                onCreated={() => {
+                  setOpen(false);
+                  void reload();
+                }}
+              />
+            </Dialog>
+          )}
         </div>
       </header>
 
@@ -76,16 +162,19 @@ export default function Payments() {
           <CardContent className="p-0">
             <ul className="divide-y divide-border">
               {filtered.map((r) => (
-                <li key={r.id} className="flex items-center justify-between gap-3 p-4">
-                  <div className="min-w-0">
+                <li key={r.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium">{r.receipt_number}</div>
                     <div className="text-xs text-muted-foreground">
                       {r.tenants?.full_name ?? "—"} · {fmtDateTime(r.paid_at)}
-                      {r.reference ? ` · ${r.reference}` : ""}
                     </div>
+                    {r.reference && <div className="text-xs text-muted-foreground">Ref: {r.reference}</div>}
+                    {r.reason && <div className="text-xs text-muted-foreground italic">Note: {r.reason}</div>}
                   </div>
-                  <Badge variant="secondary">{r.method}</Badge>
-                  <div className="text-right font-semibold">{KES(r.amount)}</div>
+                  <div className="flex items-center gap-2 sm:justify-end">
+                    <Badge variant="secondary">{r.method}</Badge>
+                    <div className="text-right font-semibold">{KES(r.amount)}</div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -93,5 +182,203 @@ export default function Payments() {
         </Card>
       )}
     </div>
+  );
+}
+
+function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
+  const [tenants, setTenants] = useState<Tenant[] | null>(null);
+  const [tenantSearch, setTenantSearch] = useState("");
+  const [showTenantList, setShowTenantList] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    setValue,
+    formState: { errors, isSubmitting },
+  } = useForm<PaymentFormValues>({ resolver: zodResolver(paymentSchema) });
+
+  const selectedTenantId = watch("tenant_id");
+
+  useEffect(() => {
+    const loadTenants = async () => {
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("id,full_name")
+        .order("full_name");
+      if (!error) setTenants(data ?? []);
+    };
+    void loadTenants();
+  }, []);
+
+  const filteredTenants = (tenants ?? []).filter((t) =>
+    t.full_name.toLowerCase().includes(tenantSearch.toLowerCase())
+  );
+
+  const onSubmit = async (values: PaymentFormValues) => {
+    try {
+      // Generate receipt number
+      const now = new Date();
+      const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
+
+      const payload: Record<string, unknown> = {
+        receipt_number: receipt,
+        tenant_id: values.tenant_id,
+        amount: values.amount,
+        method: values.method,
+        reference: values.reference || null,
+        reason: values.reason || null,
+        paid_at: values.paid_at,
+      };
+
+      const { error } = await supabase.from("payments").insert(payload as never);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+
+      toast.success("Payment recorded successfully");
+      reset();
+      onCreated();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    }
+  };
+
+  const handleTenantSelect = (tenantId: string, tenantName: string) => {
+    setValue("tenant_id", tenantId);
+    setTenantSearch(tenantName);
+    setShowTenantList(false);
+  };
+
+  return (
+    <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <DialogHeader>
+          <DialogTitle>Record payment</DialogTitle>
+          <DialogDescription>
+            Record a manual payment from a tenant. A receipt number will be generated automatically.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="tenant" className="text-xs">
+              Tenant
+            </Label>
+            <div className="relative">
+              <Input
+                id="tenant"
+                placeholder="Search tenant…"
+                value={tenantSearch}
+                onChange={(e) => {
+                  setTenantSearch(e.target.value);
+                  setShowTenantList(true);
+                }}
+                onFocus={() => setShowTenantList(true)}
+                className="mb-2"
+              />
+              {showTenantList && tenantSearch && filteredTenants.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-10 space-y-1 rounded-md border border-input bg-popover p-2 shadow-md">
+                  {filteredTenants.slice(0, 5).map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleTenantSelect(t.id, t.full_name)}
+                      className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                    >
+                      {t.full_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {selectedTenantId && (
+              <p className="text-xs text-muted-foreground">
+                Selected: {tenants?.find((t) => t.id === selectedTenantId)?.full_name}
+              </p>
+            )}
+            {errors.tenant_id && <p className="text-xs text-destructive">{errors.tenant_id.message}</p>}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="amount" className="text-xs">
+                Amount (KES)
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                placeholder="0.00"
+                {...register("amount")}
+              />
+              {errors.amount && <p className="text-xs text-destructive">{errors.amount.message}</p>}
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="method" className="text-xs">
+                Method
+              </Label>
+              <Select defaultValue="" onValueChange={(value) => setValue("method", value as any)}>
+                <SelectTrigger id="method">
+                  <SelectValue placeholder="Select method" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="cash">Cash</SelectItem>
+                  <SelectItem value="mpesa">M-Pesa</SelectItem>
+                  <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                  <SelectItem value="cheque">Cheque</SelectItem>
+                </SelectContent>
+              </Select>
+              {errors.method && <p className="text-xs text-destructive">{errors.method.message}</p>}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="paid_at" className="text-xs">
+              Payment date
+            </Label>
+            <Input
+              id="paid_at"
+              type="date"
+              {...register("paid_at")}
+              defaultValue={new Date().toISOString().split("T")[0]}
+            />
+            {errors.paid_at && <p className="text-xs text-destructive">{errors.paid_at.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="reference" className="text-xs">
+              Reference number (optional)
+            </Label>
+            <Input
+              id="reference"
+              placeholder="M-Pesa transaction ID, bank receipt, etc."
+              {...register("reference")}
+            />
+            {errors.reference && <p className="text-xs text-destructive">{errors.reference.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="reason" className="text-xs">
+              Note / Reason (optional)
+            </Label>
+            <Textarea
+              id="reason"
+              placeholder="E.g., Late payment settlement, partial payment, etc."
+              className="min-h-[80px]"
+              {...register("reason")}
+            />
+            {errors.reason && <p className="text-xs text-destructive">{errors.reason.message}</p>}
+          </div>
+        </div>
+        <DialogFooter className="mt-6">
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Record payment
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
   );
 }

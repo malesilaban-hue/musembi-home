@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Home, Building2, Users, User, FileSignature, ReceiptText, Wallet, UserCog } from "lucide-react";
+import { Home, Building2, Users, User, FileSignature, ReceiptText, Wallet, UserCog, Wrench } from "lucide-react";
 import { useAuth, type AppRole } from "@/lib/auth-context";
 import logo from "@/assets/logo.png";
 
@@ -14,6 +14,7 @@ const items: Item[] = [
   { to: "/leases", label: "Leases", icon: FileSignature, roles: STAFF },
   { to: "/invoices", label: "Invoices", icon: ReceiptText },
   { to: "/payments", label: "Payments", icon: Wallet },
+  { to: "/maintenance", label: "Maintenance", icon: Wrench, roles: STAFF },
   { to: "/team", label: "Team", icon: UserCog, roles: ["super_admin", "landlord"] },
   { to: "/profile", label: "Profile", icon: User },
 ];
@@ -21,7 +22,7 @@ const items: Item[] = [
 export function SideNav() {
   const { hasRole } = useAuth();
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-border bg-sidebar md:flex">
+    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
       <div className="flex h-16 items-center gap-2 border-b border-border px-5">
         <img src={logo} alt="MUSEMBI PMS" width={32} height={32} className="h-8 w-8" />
         <div className="flex flex-col leading-tight">

@@ -43,12 +43,15 @@ interface TenantOpt { id: string; full_name: string }
 interface UnitOpt {
   id: string;
   house_number: string;
+  unit_type: string;
+  floor_level: string;
   rent: number;
   water_charge: number;
   garbage_charge: number;
   parking_charge: number;
   service_charge: number;
   deposit: number;
+  status: string;
   properties: { name: string } | null;
 }
 
@@ -89,7 +92,8 @@ export default function Leases() {
       supabase.from("tenants").select("id,full_name").order("full_name"),
       supabase
         .from("units")
-        .select("id,house_number,rent,water_charge,garbage_charge,parking_charge,service_charge,deposit,properties(name)")
+        .select("id,house_number,unit_type,floor_level,rent,water_charge,garbage_charge,parking_charge,service_charge,deposit,status,properties(name)")
+        .eq("status", "vacant")
         .order("house_number"),
     ]);
     setTenants((t.data as TenantOpt[]) ?? []);
@@ -271,11 +275,11 @@ function LeaseDialog({
               name="unit_id"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={(v) => { field.onChange(v); onUnitChange(v); }}>
-                  <SelectTrigger><SelectValue placeholder="Select unit" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Select vacant unit" /></SelectTrigger>
                   <SelectContent>
                     {units.map((u) => (
                       <SelectItem key={u.id} value={u.id}>
-                        {u.properties?.name ?? "—"} · {u.house_number}
+                        {u.properties?.name ?? "—"} · {u.house_number} ({u.unit_type.replace(/_/g, " ")}, {u.floor_level})
                       </SelectItem>
                     ))}
                   </SelectContent>

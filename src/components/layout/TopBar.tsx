@@ -1,4 +1,4 @@
-import { Moon, Sun, LogOut, Monitor } from "lucide-react";
+import { Moon, Sun, LogOut, Monitor, Menu } from "lucide-react";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
@@ -20,12 +20,25 @@ const roleLabels: Record<string, string> = {
   tenant: "Tenant",
 };
 
-export function TopBar() {
+interface TopBarProps {
+  onMenuClick?: () => void;
+}
+
+export function TopBar({ onMenuClick }: TopBarProps) {
   const { theme, setTheme, resolved } = useTheme();
   const { user, roles, signOut } = useAuth();
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-4 backdrop-blur md:h-16 md:px-8">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="md:hidden"
+        onClick={onMenuClick}
+        aria-label="Toggle menu"
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
       <div className="flex items-center gap-2 md:hidden">
         <img src={logo} alt="" width={28} height={28} className="h-7 w-7" />
         <span className="text-sm font-bold tracking-tight">MUSEMBI PMS</span>
