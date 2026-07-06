@@ -19,6 +19,7 @@ const Payments = lazy(() => import("./pages/Payments"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
 const Team = lazy(() => import("./pages/Team"));
 const Profile = lazy(() => import("./pages/Profile"));
+const Settings = lazy(() => import("./pages/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function PageFallback() {
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/maintenance" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><Maintenance /></RequireRole>} />
           <Route path="/team" element={<RequireRole roles={["super_admin","landlord"]}><Team /></RequireRole>} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/settings" element={<RequireRole roles={["super_admin","landlord"]}><Settings /></RequireRole>} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

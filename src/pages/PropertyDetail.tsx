@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { usePropertyTheme } from "@/lib/use-property-theme";
 import { Link, useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -38,6 +39,7 @@ interface Property {
   address: string | null;
   city: string | null;
   county: string | null;
+  theme?: string | null;
 }
 interface Unit {
   id: string;
@@ -86,7 +88,7 @@ export default function PropertyDetail() {
 
   const loadAll = async () => {
     const [{ data: p, error: pe }, { data: u, error: ue }] = await Promise.all([
-      supabase.from("properties").select("id,name,address,city,county").eq("id", id!).maybeSingle(),
+      supabase.from("properties").select("id,name,address,city,county,theme").eq("id", id!).maybeSingle(),
       supabase
         .from("units")
         .select("id,house_number,unit_type,floor_level,rent,deposit,status")
@@ -98,6 +100,8 @@ export default function PropertyDetail() {
     setProperty(p as Property | null);
     setUnits((u ?? []) as Unit[]);
   };
+
+  usePropertyTheme(property?.theme);
 
   if (!property) {
     return (

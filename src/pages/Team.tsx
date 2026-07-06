@@ -1,20 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, type AppRole } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, ShieldCheck, Plus, Mail, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -22,51 +12,130 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Loader2, ShieldCheck, UserCog, Building2, X } from "lucide-react";
 import { toast } from "sonner";
 
-interface Row {
+interface Profile {
+  id: string;
+  full_name: string | null;
+  phone: string | null;
+}
+interface RoleRow {
   user_id: string;
-  email: string;
-  role: string;
+  role: AppRole;
+}
+interface Property {
+  id: string;
+  name: string;
+}
+interface Assignment {
+  user_id: string;
+  property_id: string;
 }
 
-const schema = z.object({
-  email: z.string().email("Valid email required"),
-  role: z.enum(["caretaker", "accountant", "technician"]),
-});
-type FormValues = z.infer<typeof schema>;
+const ROLE_OPTIONS: AppRole[] = [
+  "super_admin",
+  "landlord",
+  "caretaker",
+  "accountant",
+  "technician",
+  "security",
+  "tenant",
+];
 
 export default function Team() {
   const { hasRole } = useAuth();
-  const [rows, setRows] = useState<Row[] | null>(null);
-  const [open, setOpen] = useState(false);
+  const canManage = hasRole(["super_admin", "landlord"]);
+  const [profiles, setProfiles] = useState<Profile[] | null>(null);
+  const [roles, setRoles] = useState<RoleRow[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [q, setQ] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const reload = async () => {
-    const { data, error } = await supabase.from("user_roles").select("user_id,role");
-    if (error) {
-      toast.error(error.message);
-      setRows([]);
-      return;
-    }
-    // Format data - we'll just show user_id as email since we don't have email in user_roles
-    const formatted = (data ?? []).map((row: any) => ({
-      user_id: row.user_id,
-      email: row.user_id.substring(0, 13) + "...", // Show truncated UUID
-      role: row.role,
-    }));
-    setRows(formatted);
+    const [p, r, pr, a] = await Promise.all([
+      supabase.from("profiles").select("id,full_name,phone"),
+      supabase.from("user_roles").select("user_id,role"),
+      supabase.from("properties").select("id,name").order("name"),
+      supabase.from("caretaker_properties").select("user_id,property_id"),
+    ]);
+    if (p.error) toast.error(p.error.message);
+    setProfiles(p.data ?? []);
+    setRoles((r.data ?? []) as RoleRow[]);
+    setProperties(pr.data ?? []);
+    setAssignments(a.data ?? []);
   };
 
   useEffect(() => {
     document.title = "Team · MUSEMBI PMS";
-    if (!hasRole(["super_admin", "landlord"])) return;
-    void reload();
-  }, [hasRole]);
+    if (canManage) void reload();
+  }, [canManage]);
 
-  if (!hasRole(["super_admin", "landlord"])) {
+  const rolesByUser = useMemo(() => {
+    const m = new Map<string, AppRole[]>();
+    roles.forEach((r) => m.set(r.user_id, [...(m.get(r.user_id) ?? []), r.role]));
+    return m;
+  }, [roles]);
+
+  const assignsByUser = useMemo(() => {
+    const m = new Map<string, string[]>();
+    assignments.forEach((a) =>
+      m.set(a.user_id, [...(m.get(a.user_id) ?? []), a.property_id]),
+    );
+    return m;
+  }, [assignments]);
+
+  const filtered = (profiles ?? []).filter((p) => {
+    if (!q) return true;
+    const s = q.toLowerCase();
+    return (
+      (p.full_name ?? "").toLowerCase().includes(s) ||
+      (p.phone ?? "").toLowerCase().includes(s) ||
+      p.id.toLowerCase().includes(s)
+    );
+  });
+
+  const setUserRole = async (userId: string, role: AppRole) => {
+    setBusyId(userId);
+    // Replace all roles with the single chosen role (simple model)
+    const { error: delErr } = await supabase
+      .from("user_roles")
+      .delete()
+      .eq("user_id", userId);
+    if (delErr) {
+      toast.error(delErr.message);
+      setBusyId(null);
+      return;
+    }
+    const { error } = await supabase
+      .from("user_roles")
+      .insert({ user_id: userId, role } as never);
+    if (error) toast.error(error.message);
+    else toast.success(`Role set to ${role}`);
+    await reload();
+    setBusyId(null);
+  };
+
+  const toggleAssignment = async (userId: string, propertyId: string, on: boolean) => {
+    if (on) {
+      const { error } = await supabase
+        .from("caretaker_properties")
+        .insert({ user_id: userId, property_id: propertyId } as never);
+      if (error) return toast.error(error.message);
+    } else {
+      const { error } = await supabase
+        .from("caretaker_properties")
+        .delete()
+        .eq("user_id", userId)
+        .eq("property_id", propertyId);
+      if (error) return toast.error(error.message);
+    }
+    await reload();
+  };
+
+  if (!canManage) {
     return (
       <Card>
         <CardContent className="py-10 text-center text-sm text-muted-foreground">
@@ -78,157 +147,132 @@ export default function Team() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Team &amp; Roles</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create team members and assign roles for caretakers, accountants, and technicians.
-          </p>
-        </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-1 h-4 w-4" /> Add member
-            </Button>
-          </DialogTrigger>
-          <TeamDialog
-            onCreated={() => {
-              setOpen(false);
-              void reload();
-            }}
-          />
-        </Dialog>
+      <header>
+        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Team &amp; Roles</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Manage user roles and assign caretakers to specific properties.
+        </p>
       </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldCheck className="h-4 w-4 text-primary" /> Role assignments
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {rows === null ? (
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          ) : rows.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No team members yet.</p>
-          ) : (
-            <ul className="divide-y divide-border text-sm">
-              {rows.map((r) => (
-                <li key={`${r.user_id}-${r.role}`} className="flex items-center justify-between py-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium">{r.email}</div>
-                    <div className="text-xs text-muted-foreground">{r.user_id}</div>
+      <Input
+        placeholder="Search by name or phone…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        className="max-w-md"
+      />
+
+      {profiles === null ? (
+        <div className="flex h-40 items-center justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No users yet.
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((p) => {
+            const userRoles = rolesByUser.get(p.id) ?? [];
+            const primary = userRoles[0] ?? "tenant";
+            const isCaretaker = userRoles.includes("caretaker");
+            const assigned = new Set(assignsByUser.get(p.id) ?? []);
+            return (
+              <Card key={p.id}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex flex-wrap items-center justify-between gap-3 text-base">
+                    <span className="flex items-center gap-2">
+                      <UserCog className="h-4 w-4 text-primary" />
+                      {p.full_name || <span className="text-muted-foreground">(no name)</span>}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        {p.phone ?? ""}
+                      </span>
+                    </span>
+                    <span className="flex flex-wrap gap-1">
+                      {userRoles.map((r) => (
+                        <span
+                          key={r}
+                          className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary"
+                        >
+                          {r}
+                        </span>
+                      ))}
+                    </span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="min-w-[180px] flex-1">
+                      <Label className="text-xs">Assign role</Label>
+                      <Select
+                        value={primary}
+                        onValueChange={(v) => setUserRole(p.id, v as AppRole)}
+                        disabled={busyId === p.id}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROLE_OPTIONS.map((r) => (
+                            <SelectItem key={r} value={r}>
+                              {r}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Role changes take effect on the user&apos;s next request.
+                    </div>
                   </div>
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-primary">
-                    {r.role}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
+
+                  {isCaretaker && (
+                    <div>
+                      <Label className="text-xs flex items-center gap-1.5">
+                        <Building2 className="h-3.5 w-3.5" /> Assigned properties
+                      </Label>
+                      {properties.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">No properties available.</p>
+                      ) : (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+                          {properties.map((pr) => {
+                            const on = assigned.has(pr.id);
+                            return (
+                              <label
+                                key={pr.id}
+                                className="flex items-center gap-2 rounded-md border border-border p-2 text-sm"
+                              >
+                                <Checkbox
+                                  checked={on}
+                                  onCheckedChange={(v) =>
+                                    void toggleAssignment(p.id, pr.id, !!v)
+                                  }
+                                />
+                                <span className="truncate">{pr.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      <Card className="border-dashed">
+        <CardContent className="flex items-start gap-3 py-4 text-xs text-muted-foreground">
+          <ShieldCheck className="mt-0.5 h-4 w-4 text-primary" />
+          <p>
+            To invite a new user, share the sign-up link. New sign-ups appear here automatically.
+            Then assign their role and (for caretakers) which properties they manage.
+          </p>
         </CardContent>
       </Card>
     </div>
-  );
-}
-
-function TeamDialog({ onCreated }: { onCreated: () => void }) {
-  const {
-    register,
-    handleSubmit,
-    reset,
-    watch,
-    formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
-  const role = watch("role");
-
-  const onSubmit = async (values: FormValues) => {
-    try {
-      // Call the backend function to create user and assign role
-      const { data, error } = await supabase.functions.invoke("create-team-member", {
-        body: {
-          email: values.email,
-          role: values.role,
-        },
-      });
-
-      if (error) {
-        toast.error(error.message || "Failed to create team member");
-        return;
-      }
-
-      if (data?.error) {
-        toast.error(data.error);
-        return;
-      }
-
-      toast.success(`${values.role} invitation sent to ${values.email}`);
-      reset();
-      onCreated();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Something went wrong");
-    }
-  };
-
-  return (
-    <DialogContent>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <DialogHeader>
-          <DialogTitle>Add team member</DialogTitle>
-          <DialogDescription>
-            Invite a new team member and assign a role. They&apos;ll receive an email to set up their account.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="email" className="text-xs">
-              Email address
-            </Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="caretaker@example.com"
-              {...register("email")}
-            />
-            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="role" className="text-xs">
-              Role
-            </Label>
-            <Select defaultValue="" onValueChange={(value) => register("role").onChange({ target: { value } })}>
-              <SelectTrigger id="role">
-                <SelectValue placeholder="Select a role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="caretaker">Caretaker</SelectItem>
-                <SelectItem value="accountant">Accountant</SelectItem>
-                <SelectItem value="technician">Technician</SelectItem>
-              </SelectContent>
-            </Select>
-            {errors.role && <p className="text-xs text-destructive">{errors.role.message}</p>}
-          </div>
-          {role && (
-            <div className="rounded-lg bg-muted p-3 text-xs text-muted-foreground">
-              {role === "caretaker" && (
-                <span>Caretakers can manage properties, record payments, and track maintenance.</span>
-              )}
-              {role === "accountant" && (
-                <span>Accountants can manage invoices, payments, and financial reports.</span>
-              )}
-              {role === "technician" && (
-                <span>Technicians can view and update maintenance requests assigned to them.</span>
-              )}
-            </div>
-          )}
-        </div>
-        <DialogFooter className="mt-6">
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Send invitation
-          </Button>
-        </DialogFooter>
-      </form>
-    </DialogContent>
   );
 }

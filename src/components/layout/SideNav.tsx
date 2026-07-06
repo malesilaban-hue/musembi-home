@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Home, Building2, Users, User, FileSignature, ReceiptText, Wallet, UserCog, Wrench } from "lucide-react";
+import { Home, Building2, Users, User, FileSignature, ReceiptText, Wallet, UserCog, Wrench, Settings } from "lucide-react";
 import { useAuth, type AppRole } from "@/lib/auth-context";
 import logo from "@/assets/logo.png";
 
@@ -16,6 +16,7 @@ const items: Item[] = [
   { to: "/payments", label: "Payments", icon: Wallet },
   { to: "/maintenance", label: "Maintenance", icon: Wrench, roles: STAFF },
   { to: "/team", label: "Team", icon: UserCog, roles: ["super_admin", "landlord"] },
+  { to: "/settings", label: "Settings", icon: Settings, roles: ["super_admin", "landlord"] },
   { to: "/profile", label: "Profile", icon: User },
 ];
 

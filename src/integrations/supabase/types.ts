@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          business_address: string | null
+          business_email: string | null
+          business_kra_pin: string | null
+          business_name: string | null
+          business_phone: string | null
+          default_due_day: number
+          id: boolean
+          overdue_grace_days: number
+          updated_at: string
+        }
+        Insert: {
+          business_address?: string | null
+          business_email?: string | null
+          business_kra_pin?: string | null
+          business_name?: string | null
+          business_phone?: string | null
+          default_due_day?: number
+          id?: boolean
+          overdue_grace_days?: number
+          updated_at?: string
+        }
+        Update: {
+          business_address?: string | null
+          business_email?: string | null
+          business_kra_pin?: string | null
+          business_name?: string | null
+          business_phone?: string | null
+          default_due_day?: number
+          id?: boolean
+          overdue_grace_days?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       audit_logs: {
         Row: {
           action: string
@@ -78,6 +114,35 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "blocks_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      caretaker_properties: {
+        Row: {
+          assigned_by: string | null
+          created_at: string
+          property_id: string
+          user_id: string
+        }
+        Insert: {
+          assigned_by?: string | null
+          created_at?: string
+          property_id: string
+          user_id: string
+        }
+        Update: {
+          assigned_by?: string | null
+          created_at?: string
+          property_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "caretaker_properties_property_id_fkey"
             columns: ["property_id"]
             isOneToOne: false
             referencedRelation: "properties"
@@ -477,6 +542,7 @@ export type Database = {
           notes: string | null
           owner_id: string
           photo_url: string | null
+          theme: Database["public"]["Enums"]["property_theme"]
           updated_at: string
         }
         Insert: {
@@ -491,6 +557,7 @@ export type Database = {
           notes?: string | null
           owner_id: string
           photo_url?: string | null
+          theme?: Database["public"]["Enums"]["property_theme"]
           updated_at?: string
         }
         Update: {
@@ -505,6 +572,7 @@ export type Database = {
           notes?: string | null
           owner_id?: string
           photo_url?: string | null
+          theme?: Database["public"]["Enums"]["property_theme"]
           updated_at?: string
         }
         Relationships: []
@@ -714,6 +782,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_property: { Args: { _pid: string }; Returns: boolean }
       current_user_has_any_role: {
         Args: { _roles: Database["public"]["Enums"]["app_role"][] }
         Returns: boolean
@@ -741,6 +810,7 @@ export type Database = {
       invoice_status: "unpaid" | "partial" | "paid" | "overdue" | "void"
       lease_status: "active" | "pending" | "ended" | "terminated"
       payment_method: "cash" | "cheque" | "bank_transfer" | "mpesa" | "other"
+      property_theme: "default" | "orange" | "green" | "blue" | "purple"
       tenant_doc_type:
         | "national_id"
         | "kra_pin"
@@ -894,6 +964,7 @@ export const Constants = {
       invoice_status: ["unpaid", "partial", "paid", "overdue", "void"],
       lease_status: ["active", "pending", "ended", "terminated"],
       payment_method: ["cash", "cheque", "bank_transfer", "mpesa", "other"],
+      property_theme: ["default", "orange", "green", "blue", "purple"],
       tenant_doc_type: [
         "national_id",
         "kra_pin",

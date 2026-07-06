@@ -203,18 +203,29 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
 
     if (error) return toast.error(error.message);
 
-    // Assign unit if selected
+    // Assign unit if selected — create an active lease so it shows on Leases/Dashboard
     if (values.unit_id && data && data.length > 0) {
       const tenantId = data[0].id;
-      const { error: assignError } = await supabase
+      const unit = units.find((u) => u.id === values.unit_id);
+      const today = new Date().toISOString().slice(0, 10);
+      const { error: leaseError } = await supabase.from("leases").insert({
+        tenant_id: tenantId,
+        unit_id: values.unit_id,
+        start_date: today,
+        monthly_rent: unit?.rent ?? 0,
+        deposit: unit?.rent ?? 0,
+        billing_day: 5,
+        status: "active",
+        created_by: userId,
+      } as never);
+      const { error: unitErr } = await supabase
         .from("units")
-        .update({ status: "occupied", tenant_id: tenantId })
+        .update({ status: "occupied" } as never)
         .eq("id", values.unit_id);
-
-      if (assignError) {
-        toast.warning("Tenant created but unit assignment failed");
+      if (leaseError || unitErr) {
+        toast.warning("Tenant created but lease/unit update failed");
       } else {
-        toast.success("Tenant registered and unit assigned");
+        toast.success("Tenant registered, lease created & unit occupied");
       }
     } else {
       toast.success("Tenant registered");

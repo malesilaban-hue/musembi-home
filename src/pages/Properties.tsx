@@ -37,6 +37,7 @@ const schema = z.object({
   city: z.string().trim().max(80).optional().or(z.literal("")),
   county: z.string().trim().max(80).optional().or(z.literal("")),
   notes: z.string().trim().max(1000).optional().or(z.literal("")),
+  theme: z.enum(["default", "orange", "green", "blue", "purple"]).default("default"),
 });
 type FormValues = z.infer<typeof schema>;
 
@@ -165,8 +166,13 @@ function PropertyDialog({ userId, onCreated, propertyId }: { userId: string; onC
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
-  } = useForm<FormValues>({ resolver: zodResolver(schema) });
+  } = useForm<z.input<typeof schema>, unknown, FormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { theme: "default" },
+  });
 
   const isEditing = !!propertyId;
 
@@ -175,17 +181,26 @@ function PropertyDialog({ userId, onCreated, propertyId }: { userId: string; onC
       (async () => {
         const { data } = await supabase
           .from("properties")
-          .select("name,address,city,county,notes")
+          .select("name,address,city,county,notes,theme")
           .eq("id", propertyId)
           .maybeSingle();
         if (data) {
-          reset(data);
+          reset({
+            name: data.name,
+            address: data.address ?? "",
+            city: data.city ?? "",
+            county: data.county ?? "",
+            notes: data.notes ?? "",
+            theme: (data as { theme?: FormValues["theme"] }).theme ?? "default",
+          });
         }
       })();
     } else {
-      reset({ name: "", address: "", city: "", county: "", notes: "" });
+      reset({ name: "", address: "", city: "", county: "", notes: "", theme: "default" });
     }
   }, [isEditing, propertyId, reset]);
+
+  const currentTheme = watch("theme") ?? "default";
 
   const onSubmit = async (values: FormValues) => {
     const payload = {
@@ -194,13 +209,14 @@ function PropertyDialog({ userId, onCreated, propertyId }: { userId: string; onC
       city: values.city || null,
       county: values.county || null,
       notes: values.notes || null,
+      theme: values.theme,
     };
 
     let error;
     if (isEditing) {
-      ({ error } = await supabase.from("properties").update(payload).eq("id", propertyId!));
+      ({ error } = await supabase.from("properties").update(payload as never).eq("id", propertyId!));
     } else {
-      ({ error } = await supabase.from("properties").insert({ ...payload, owner_id: userId }));
+      ({ error } = await supabase.from("properties").insert({ ...payload, owner_id: userId } as never));
     }
 
     if (error) {
@@ -244,6 +260,40 @@ function PropertyDialog({ userId, onCreated, propertyId }: { userId: string; onC
           <div className="space-y-1.5">
             <Label htmlFor="p-notes">Notes</Label>
             <Textarea id="p-notes" rows={3} {...register("notes")} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Property theme colour</Label>
+            <div className="flex flex-wrap gap-2">
+              {(["default", "orange", "green", "blue", "purple"] as const).map((c) => {
+                const swatch: Record<string, string> = {
+                  default: "hsl(220 30% 30%)",
+                  orange: "hsl(28 90% 55%)",
+                  green: "hsl(150 60% 40%)",
+                  blue: "hsl(220 80% 55%)",
+                  purple: "hsl(285 70% 55%)",
+                };
+                const active = currentTheme === c;
+                return (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setValue("theme", c, { shouldDirty: true })}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs capitalize transition ${
+                      active ? "border-primary ring-2 ring-primary/40" : "border-border"
+                    }`}
+                  >
+                    <span
+                      className="inline-block h-3.5 w-3.5 rounded-full"
+                      style={{ background: swatch[c] }}
+                    />
+                    {c}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Applied when viewing this property or when a caretaker of this property signs in.
+            </p>
           </div>
         </div>
         <DialogFooter className="mt-6">
