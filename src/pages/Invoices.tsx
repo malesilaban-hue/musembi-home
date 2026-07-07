@@ -29,9 +29,12 @@ interface Row {
 }
 
 export default function Invoices() {
+  const { hasRole } = useAuth();
+  const canGenerate = hasRole(["super_admin", "landlord", "accountant"]);
   const [items, setItems] = useState<Row[] | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
+  const [generating, setGenerating] = useState(false);
 
   const reload = async () => {
     const { data, error } = await supabase
@@ -42,9 +45,27 @@ export default function Invoices() {
     setItems((data as unknown as Row[]) ?? []);
   };
 
+  const generateNow = async () => {
+    setGenerating(true);
+    const { data, error } = await supabase.rpc("generate_due_invoices" as never);
+    setGenerating(false);
+    if (error) return toast.error(error.message);
+    const n = Number(data ?? 0);
+    if (n > 0) toast.success(`Generated ${n} invoice${n === 1 ? "" : "s"}`);
+    else toast.info("No new invoices to generate yet");
+    void reload();
+  };
+
   useEffect(() => {
     document.title = "Invoices · MUSEMBI PMS";
     void reload();
+    // Auto-attempt monthly generation on load (idempotent — skips if already created)
+    void supabase.rpc("generate_due_invoices" as never).then(() => reload());
+    const ch = supabase
+      .channel("invoices-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => void reload())
+      .subscribe();
+    return () => { void supabase.removeChannel(ch); };
   }, []);
 
   const filtered = (items ?? []).filter((r) => {
