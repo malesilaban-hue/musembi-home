@@ -84,6 +84,7 @@ export default function PropertyDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [assignUnit, setAssignUnit] = useState<Unit | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [filter, setFilter] = useState<"all" | "vacant" | "occupied">("all");
 
   useEffect(() => {
     if (!id) return;
