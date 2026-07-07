@@ -84,6 +84,7 @@ export default function PropertyDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [assignUnit, setAssignUnit] = useState<Unit | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [filter, setFilter] = useState<"all" | "vacant" | "occupied">("all");
 
   useEffect(() => {
     if (!id) return;
@@ -163,9 +164,30 @@ export default function PropertyDetail() {
       </header>
 
       <section>
-        <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Units ({units?.length ?? 0})
-        </h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Units ({units?.length ?? 0})
+          </h2>
+          <div className="inline-flex rounded-lg border bg-muted/40 p-0.5">
+            {(["all", "vacant", "occupied"] as const).map((f) => {
+              const count =
+                f === "all"
+                  ? units?.length ?? 0
+                  : (units ?? []).filter((u) => u.status === f).length;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className={`rounded-md px-3 py-1 text-xs font-medium capitalize transition ${
+                    filter === f ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {f} ({count})
+                </button>
+              );
+            })}
+          </div>
+        </div>
         {units === null ? (
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         ) : units.length === 0 ? (
@@ -180,7 +202,7 @@ export default function PropertyDetail() {
         ) : (
           <div className="space-y-6">
             {["ground", "first", "second", "third", "fourth", "fifth"].map((floor) => {
-              const floorUnits = units.filter((u) => u.floor_level === floor);
+              const floorUnits = units.filter((u) => u.floor_level === floor && (filter === "all" || u.status === filter));
               if (floorUnits.length === 0) return null;
               return (
                 <div key={floor}>

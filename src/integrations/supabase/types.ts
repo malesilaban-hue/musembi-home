@@ -150,6 +150,33 @@ export type Database = {
           },
         ]
       }
+      chat_messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          read_at: string | null
+          recipient_id: string
+          sender_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          read_at?: string | null
+          recipient_id: string
+          sender_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          read_at?: string | null
+          recipient_id?: string
+          sender_id?: string
+        }
+        Relationships: []
+      }
       invoice_items: {
         Row: {
           amount: number
@@ -787,6 +814,7 @@ export type Database = {
         Args: { _roles: Database["public"]["Enums"]["app_role"][] }
         Returns: boolean
       }
+      generate_due_invoices: { Args: never; Returns: number }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -823,7 +851,12 @@ export type Database = {
         | "reserved"
         | "maintenance"
         | "unavailable"
-      unit_type: "single_room" | "bedsitter" | "double_room"
+      unit_type:
+        | "single_room"
+        | "bedsitter"
+        | "double_room"
+        | "store"
+        | "caretaker_unit"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -979,7 +1012,13 @@ export const Constants = {
         "maintenance",
         "unavailable",
       ],
-      unit_type: ["single_room", "bedsitter", "double_room"],
+      unit_type: [
+        "single_room",
+        "bedsitter",
+        "double_room",
+        "store",
+        "caretaker_unit",
+      ],
     },
   },
 } as const

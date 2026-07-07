@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -26,8 +25,7 @@ interface Tenant {
   id: string;
   full_name: string;
   phone: string;
-  email: string | null;
-  national_id: string | null;
+  alt_phone: string | null;
   created_at: string;
 }
 
@@ -38,19 +36,13 @@ interface Unit {
   floor_level: string;
   rent: number;
   status: string;
-  properties: {
-    name: string;
-  } | null;
+  properties: { name: string } | null;
 }
 
 const schema = z.object({
   full_name: z.string().trim().min(2, "Full name required").max(120),
   phone: z.string().trim().min(7, "Phone required").max(20),
   alt_phone: z.string().trim().max(20).optional().or(z.literal("")),
-  national_id: z.string().trim().max(30).optional().or(z.literal("")),
-  emergency_name: z.string().trim().max(120).optional().or(z.literal("")),
-  emergency_phone: z.string().trim().max(20).optional().or(z.literal("")),
-  emergency_relation: z.string().trim().max(60).optional().or(z.literal("")),
   unit_id: z.string().optional().or(z.literal("")),
 });
 type FormValues = z.infer<typeof schema>;
@@ -65,7 +57,7 @@ export default function Tenants() {
   const reload = async () => {
     const { data, error } = await supabase
       .from("tenants")
-      .select("id,full_name,phone,email,national_id,created_at")
+      .select("id,full_name,phone,alt_phone,created_at")
       .order("created_at", { ascending: false });
     if (error) return toast.error(error.message);
     setItems(data ?? []);
@@ -74,6 +66,11 @@ export default function Tenants() {
   useEffect(() => {
     document.title = "Tenants · MUSEMBI PMS";
     void reload();
+    const ch = supabase
+      .channel("tenants-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tenants" }, () => void reload())
+      .subscribe();
+    return () => { void supabase.removeChannel(ch); };
   }, []);
 
   const filtered = (items ?? []).filter((t) => {
@@ -82,8 +79,7 @@ export default function Tenants() {
     return (
       t.full_name.toLowerCase().includes(s) ||
       t.phone.toLowerCase().includes(s) ||
-      (t.email ?? "").toLowerCase().includes(s) ||
-      (t.national_id ?? "").toLowerCase().includes(s)
+      (t.alt_phone ?? "").toLowerCase().includes(s)
     );
   });
 
@@ -113,7 +109,7 @@ export default function Tenants() {
       </header>
 
       <Input
-        placeholder="Search by name, phone, email or ID…"
+        placeholder="Search by name or phone…"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         className="max-w-md"
@@ -145,8 +141,11 @@ export default function Tenants() {
                   <div className="flex items-center gap-1.5">
                     <Phone className="h-3.5 w-3.5" /> {t.phone}
                   </div>
-                  {t.email && <div className="truncate">{t.email}</div>}
-                  {t.national_id && <div>ID: {t.national_id}</div>}
+                  {t.alt_phone && (
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <Phone className="h-3 w-3" /> {t.alt_phone}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </Link>
@@ -175,12 +174,12 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
 
   useEffect(() => {
     const loadData = async () => {
-      // Load units
-      const { data: unitsData, error: unitsError } = await supabase
+      const { data, error } = await supabase
         .from("units")
         .select("id,house_number,unit_type,floor_level,rent,status,properties(name)")
+        .eq("status", "vacant")
         .order("house_number");
-      if (!unitsError) setUnits(unitsData ?? []);
+      if (!error) setUnits(data ?? []);
     };
     void loadData();
   }, []);
@@ -190,19 +189,16 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
   );
 
   const onSubmit = async (values: FormValues) => {
-    const payload: Record<string, unknown> = { created_by: userId };
-    for (const [k, v] of Object.entries(values)) {
-      if (k === "unit_id") continue; // Handle separately
-      payload[k] = v === "" ? null : v;
-    }
-    payload.full_name = values.full_name;
-    payload.phone = values.phone;
+    const payload = {
+      created_by: userId,
+      full_name: values.full_name,
+      phone: values.phone,
+      alt_phone: values.alt_phone || null,
+    };
 
     const { error, data } = await supabase.from("tenants").insert(payload as never).select("id");
-
     if (error) return toast.error(error.message);
 
-    // Assign unit if selected — create an active lease so it shows on Leases/Dashboard
     if (values.unit_id && data && data.length > 0) {
       const tenantId = data[0].id;
       const unit = units.find((u) => u.id === values.unit_id);
@@ -241,7 +237,7 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
       <form onSubmit={handleSubmit(onSubmit)}>
         <DialogHeader>
           <DialogTitle>Register tenant</DialogTitle>
-          <DialogDescription>KYC details for a new tenant.</DialogDescription>
+          <DialogDescription>Minimal details — full name, phone, and unit.</DialogDescription>
         </DialogHeader>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Full name" error={errors.full_name?.message}>
@@ -250,39 +246,21 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
           <Field label="Phone" error={errors.phone?.message}>
             <Input {...register("phone")} placeholder="+2547…" />
           </Field>
-          <Field label="Alt phone">
+          <Field label="Alt phone (optional)">
             <Input {...register("alt_phone")} />
           </Field>
-          <Field label="National ID">
-            <Input {...register("national_id")} />
-          </Field>
-          <Field label="Emergency name">
-            <Input {...register("emergency_name")} />
-          </Field>
-          <Field label="Emergency phone">
-            <Input {...register("emergency_phone")} />
-          </Field>
-          <Field label="Emergency relation">
-            <Input {...register("emergency_relation")} placeholder="Spouse / Parent…" />
-          </Field>
 
-          {/* Unit Assignment Section */}
           <div className="sm:col-span-2 border-t pt-4">
             <div className="space-y-3">
-              <Label className="font-semibold text-sm">Assign Unit (Optional)</Label>
+              <Label className="font-semibold text-sm">Assign vacant unit</Label>
               <div className="space-y-1.5">
-                <Label htmlFor="unit-search" className="text-xs">
-                  Search unit by number
-                </Label>
+                <Label htmlFor="unit-search" className="text-xs">Search unit by number</Label>
                 <div className="relative">
                   <Input
                     id="unit-search"
                     placeholder="Search unit number (e.g., A-01)…"
                     value={unitSearch}
-                    onChange={(e) => {
-                      setUnitSearch(e.target.value);
-                      setShowUnitList(true);
-                    }}
+                    onChange={(e) => { setUnitSearch(e.target.value); setShowUnitList(true); }}
                     onFocus={() => setShowUnitList(true)}
                   />
                   {showUnitList && unitSearch && filteredUnits.length > 0 && (
@@ -314,8 +292,7 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
                     <div className="flex-1 min-w-0">
                       <div className="font-medium text-sm">{selectedUnit.house_number}</div>
                       <div className="text-xs text-muted-foreground">
-                        {selectedUnit.unit_type} • Floor {selectedUnit.floor_level} • KES{" "}
-                        {selectedUnit.rent?.toLocaleString()}
+                        {selectedUnit.unit_type} • Floor {selectedUnit.floor_level} • KES {selectedUnit.rent?.toLocaleString()}
                       </div>
                       {selectedUnit.properties?.name && (
                         <div className="text-xs text-muted-foreground">{selectedUnit.properties.name}</div>

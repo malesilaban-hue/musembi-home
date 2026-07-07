@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth-context";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Loader2, ReceiptText } from "lucide-react";
+import { Loader2, ReceiptText, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { fmtDate, KES } from "@/lib/format";
 
@@ -27,9 +29,12 @@ interface Row {
 }
 
 export default function Invoices() {
+  const { hasRole } = useAuth();
+  const canGenerate = hasRole(["super_admin", "landlord", "accountant"]);
   const [items, setItems] = useState<Row[] | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
+  const [generating, setGenerating] = useState(false);
 
   const reload = async () => {
     const { data, error } = await supabase
@@ -40,9 +45,27 @@ export default function Invoices() {
     setItems((data as unknown as Row[]) ?? []);
   };
 
+  const generateNow = async () => {
+    setGenerating(true);
+    const { data, error } = await supabase.rpc("generate_due_invoices" as never);
+    setGenerating(false);
+    if (error) return toast.error(error.message);
+    const n = Number(data ?? 0);
+    if (n > 0) toast.success(`Generated ${n} invoice${n === 1 ? "" : "s"}`);
+    else toast.info("No new invoices to generate yet");
+    void reload();
+  };
+
   useEffect(() => {
     document.title = "Invoices · MUSEMBI PMS";
     void reload();
+    // Auto-attempt monthly generation on load (idempotent — skips if already created)
+    void supabase.rpc("generate_due_invoices" as never).then(() => reload());
+    const ch = supabase
+      .channel("invoices-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => void reload())
+      .subscribe();
+    return () => { void supabase.removeChannel(ch); };
   }, []);
 
   const filtered = (items ?? []).filter((r) => {
@@ -58,9 +81,17 @@ export default function Invoices() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Invoices</h1>
-        <p className="mt-1 text-sm text-muted-foreground">All billing records across leases.</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Invoices</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Auto-generated on the billing day for every active lease.</p>
+        </div>
+        {canGenerate && (
+          <Button size="sm" variant="outline" onClick={generateNow} disabled={generating}>
+            {generating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
+            Generate now
+          </Button>
+        )}
       </header>
 
       <div className="flex flex-wrap gap-2">
@@ -74,6 +105,7 @@ export default function Invoices() {
           </SelectContent>
         </Select>
       </div>
+
 
       {items === null ? (
         <div className="flex h-40 items-center justify-center">
