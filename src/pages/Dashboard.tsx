@@ -59,12 +59,23 @@ export default function Dashboard() {
     setGeneratingInvoices(true);
     try {
       const result = await generateMonthlyInvoices();
-      toast.success(`Generated ${result.created} invoices`);
+      if (result.created > 0) {
+        toast.success(`Generated ${result.created} invoices`);
+      } else if (result.message) {
+        toast.info(result.message);
+      } else {
+        toast.success("Invoice generation triggered");
+      }
       // Reload stats
       if (isTenant) await loadTenantDashboard();
       else await loadStaffDashboard();
-    } catch (err) {
-      toast.error("Failed to generate invoices");
+    } catch (err: any) {
+      const errorMsg = err?.message || err?.toString() || "Failed to generate invoices";
+      if (errorMsg.includes("function")) {
+        toast.error("Function not set up yet. Run SETUP_DATABASE.md steps first.");
+      } else {
+        toast.error(errorMsg);
+      }
       console.error(err);
     } finally {
       setGeneratingInvoices(false);
