@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MessageCircle, X, ArrowLeft, Send, Search } from "lucide-react";
+import { MessageCircle, X, ArrowLeft, Send, Search, GripHorizontal } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface Profile {
@@ -21,16 +21,27 @@ interface Message {
   created_at: string;
 }
 
+interface Conversation {
+  profile: Profile;
+  lastMessage: Message | null;
+  unreadCount: number;
+}
+
 export function FloatingChat() {
   const { user, hasRole } = useAuth();
   const [open, setOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [q, setQ] = useState("");
   const [active, setActive] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [body, setBody] = useState("");
   const [unread, setUnread] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState({ x: 16, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const chatRef = useRef<HTMLDivElement>(null);
 
   // Only staff-ish roles get chat
   const canChat = hasRole(["super_admin", "landlord", "caretaker", "accountant", "technician", "security"]);
@@ -48,10 +59,73 @@ export function FloatingChat() {
     void load();
   }, [user, canChat]);
 
-  // Unread count + realtime badge
+  // Unread count + realtime badge + conversations preview
   useEffect(() => {
     if (!user || !canChat) return;
-    const loadUnread = async () => {
+    const loadConversations = async () => {
+      // Get all profiles with whom we have messages
+      const { data: msgs } = await supabase
+        .from("chat_messages")
+        .select("sender_id,recipient_id")
+        .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
+        .order("created_at", { ascending: false })
+        .limit(100);
+
+      const messagesData = (msgs as any[]) ?? [];
+      const userIds = new Set<string>();
+      messagesData.forEach(m => {
+        if (m.sender_id !== user.id) userIds.add(m.sender_id);
+        if (m.recipient_id !== user.id) userIds.add(m.recipient_id);
+      });
+
+      if (userIds.size === 0) {
+        setConversations([]);
+        return;
+      }
+
+      // Get profiles for those users
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id,full_name,phone")
+        .in("id", Array.from(userIds));
+
+      // Get last message and unread count for each conversation
+      const convs: Conversation[] = [];
+      for (const profile of (profilesData as Profile[]) ?? []) {
+        const { data: lastMsg } = await supabase
+          .from("chat_messages")
+          .select("*")
+          .or(
+            `and(sender_id.eq.${user.id},recipient_id.eq.${profile.id}),and(sender_id.eq.${profile.id},recipient_id.eq.${user.id})`,
+          )
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const { count: unreadCount } = await supabase
+          .from("chat_messages")
+          .select("*", { count: "exact", head: true })
+          .eq("recipient_id", user.id)
+          .eq("sender_id", profile.id)
+          .is("read_at", null);
+
+        convs.push({
+          profile,
+          lastMessage: (lastMsg as Message) ?? null,
+          unreadCount: unreadCount ?? 0,
+        });
+      }
+
+      // Sort by most recent message
+      convs.sort((a, b) => {
+        const aTime = new Date(a.lastMessage?.created_at ?? 0).getTime();
+        const bTime = new Date(b.lastMessage?.created_at ?? 0).getTime();
+        return bTime - aTime;
+      });
+
+      setConversations(convs);
+
+      // Also load unread count
       const { count } = await supabase
         .from("chat_messages")
         .select("*", { count: "exact", head: true })
@@ -59,13 +133,14 @@ export function FloatingChat() {
         .is("read_at", null);
       setUnread(count ?? 0);
     };
-    void loadUnread();
+    void loadConversations();
+
     const ch = supabase
       .channel("chat-badge")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chat_messages", filter: `recipient_id=eq.${user.id}` },
-        () => void loadUnread(),
+        () => { void loadConversations(); },
       )
       .subscribe();
     return () => { void supabase.removeChannel(ch); };
@@ -134,6 +209,50 @@ export function FloatingChat() {
     if (error) setBody(text);
   };
 
+  const handleDragStart = (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => {
+    if (open) return; // Don't drag when chat is open
+    setIsDragging(true);
+    const element = e.currentTarget as HTMLElement;
+    const rect = element.getBoundingClientRect();
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  const handleDragMove = (e: MouseEvent) => {
+    if (!isDragging || open) return;
+    
+    const newX = e.clientX - dragOffset.x;
+    const newY = window.innerHeight - e.clientY - dragOffset.y; // For bottom positioning
+    
+    // Keep within viewport bounds
+    const maxX = window.innerWidth - 56; // Button width
+    const maxY = window.innerHeight - 100; // Leave space for bottom nav
+    
+    setPosition({
+      x: Math.max(0, Math.min(newX, maxX)),
+      y: Math.max(80, Math.min(newY, maxY)), // Keep above bottom nav
+    });
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+
+  useEffect(() => {
+    if (isDragging && !open) {
+      const handleMove = (e: MouseEvent) => handleDragMove(e);
+      const handleEnd = () => handleDragEnd();
+      document.addEventListener("mousemove", handleMove);
+      document.addEventListener("mouseup", handleEnd);
+      return () => {
+        document.removeEventListener("mousemove", handleMove);
+        document.removeEventListener("mouseup", handleEnd);
+      };
+    }
+  }, [isDragging, dragOffset, open]);
+
   if (!user || !canChat) return null;
 
   return (
@@ -141,7 +260,12 @@ export function FloatingChat() {
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="fixed bottom-24 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform hover:scale-105 md:bottom-6"
+          onMouseDown={handleDragStart}
+          className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform hover:scale-105 cursor-grab active:cursor-grabbing"
+          style={{
+            left: `${position.x}px`,
+            bottom: `${position.y}px`,
+          }}
           aria-label="Open chat"
         >
           <MessageCircle className="h-6 w-6" />
@@ -154,22 +278,35 @@ export function FloatingChat() {
       )}
 
       {open && (
-        <div className="fixed bottom-24 right-4 z-50 flex h-[520px] w-[92vw] max-w-sm flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl md:bottom-6">
-          <header className="flex items-center justify-between gap-2 border-b bg-primary p-3 text-primary-foreground">
-            {active ? (
-              <button onClick={() => setActive(null)} className="flex items-center gap-2 min-w-0">
-                <ArrowLeft className="h-4 w-4 shrink-0" />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{active.full_name ?? "User"}</div>
-                  <div className="truncate text-[11px] opacity-80">{active.phone ?? ""}</div>
+        <div
+          ref={chatRef}
+          className="fixed z-50 flex h-[520px] w-[92vw] max-w-sm flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl md:bottom-6 md:right-4"
+          style={{
+            bottom: "24px",
+            right: "16px",
+          }}
+        >
+          <header
+            onMouseDown={handleDragStart}
+            className="flex items-center justify-between gap-2 border-b bg-primary p-3 text-primary-foreground cursor-grab active:cursor-grabbing"
+          >
+            <div className="flex items-center gap-2">
+              <GripHorizontal className="h-4 w-4 opacity-70" />
+              {active ? (
+                <button onClick={() => setActive(null)} className="flex items-center gap-2 min-w-0">
+                  <ArrowLeft className="h-4 w-4 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold">{active.full_name ?? "User"}</div>
+                    <div className="truncate text-[11px] opacity-80">{active.phone ?? ""}</div>
+                  </div>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Team chat</span>
                 </div>
-              </button>
-            ) : (
-              <div className="flex items-center gap-2">
-                <MessageCircle className="h-4 w-4" />
-                <span className="text-sm font-semibold">Team chat</span>
-              </div>
-            )}
+              )}
+            </div>
             <button onClick={() => setOpen(false)} aria-label="Close chat" className="rounded p-1 hover:bg-white/10">
               <X className="h-4 w-4" />
             </button>
@@ -183,35 +320,95 @@ export function FloatingChat() {
                   <Input
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
-                    placeholder="Search users…"
+                    placeholder="Search or view messages…"
                     className="h-9 pl-8"
                   />
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto">
-                {filtered.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">No users found</div>
-                ) : (
-                  <ul>
-                    {filtered.map((p) => (
-                      <li key={p.id}>
-                        <button
-                          onClick={() => setActive(p)}
-                          className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-3 text-left hover:bg-muted/50"
-                        >
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                            {(p.full_name ?? "?").charAt(0).toUpperCase()}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">{p.full_name ?? "Unnamed"}</div>
-                            {p.phone && (
-                              <div className="truncate text-xs text-muted-foreground">{p.phone}</div>
-                            )}
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                {/* Show conversations with messages first */}
+                {conversations.length > 0 && (
+                  <div>
+                    <div className="sticky top-0 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground border-b">
+                      Messages
+                    </div>
+                    <ul>
+                      {conversations.map((conv) => (
+                        <li key={conv.profile.id}>
+                          <button
+                            onClick={() => setActive(conv.profile)}
+                            className="flex w-full items-start gap-3 border-b border-border/50 px-3 py-2 text-left hover:bg-muted/50"
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary mt-0.5">
+                              {(conv.profile.full_name ?? "?").charAt(0).toUpperCase()}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="truncate text-sm font-medium">{conv.profile.full_name ?? "Unnamed"}</div>
+                                {conv.unreadCount > 0 && (
+                                  <span className="shrink-0 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                                    {conv.unreadCount > 9 ? "9+" : conv.unreadCount}
+                                  </span>
+                                )}
+                              </div>
+                              {conv.lastMessage && (
+                                <>
+                                  <div className="truncate text-xs text-muted-foreground mt-0.5">
+                                    {conv.lastMessage.body.substring(0, 60)}...
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground mt-1">
+                                    {new Date(conv.lastMessage.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {/* Show all profiles if searching */}
+                {q && (
+                  <div>
+                    {filtered.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-muted-foreground">No users found</div>
+                    ) : (
+                      <>
+                        <div className="sticky top-0 bg-card px-3 py-2 text-xs font-semibold text-muted-foreground border-b">
+                          Start conversation
+                        </div>
+                        <ul>
+                          {filtered.map((p) => (
+                            <li key={p.id}>
+                              <button
+                                onClick={() => setActive(p)}
+                                className="flex w-full items-center gap-3 border-b border-border/50 px-3 py-3 text-left hover:bg-muted/50"
+                              >
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                                  {(p.full_name ?? "?").charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate text-sm font-medium">{p.full_name ?? "Unnamed"}</div>
+                                  {p.phone && (
+                                    <div className="truncate text-xs text-muted-foreground">{p.phone}</div>
+                                  )}
+                                </div>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Show empty state if no conversations and no search */}
+                {conversations.length === 0 && !q && (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    No messages yet. Search to start a conversation.
+                  </div>
                 )}
               </div>
             </>

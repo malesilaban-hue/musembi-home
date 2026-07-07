@@ -1,7 +1,11 @@
--- Automatic Invoice Generation System
--- Generates invoices for active leases with due date set to app_settings.default_due_day
+-- RUN THIS IN SUPABASE SQL EDITOR FIRST
+-- This sets up the invoice generation function
+-- Go to: https://supabase.com → Your Project → SQL Editor → New Query → Paste this
 
--- Create function to generate monthly invoices for active leases
+-- First check if invoices table exists
+-- If you get error "does not exist", you need to run all migrations in supabase/migrations/ folder first
+
+-- Create or replace the invoice generation function
 CREATE OR REPLACE FUNCTION public.generate_monthly_invoices()
 RETURNS TABLE(invoice_id uuid, lease_id uuid, invoice_number text, status text) AS $$
 DECLARE
@@ -116,23 +120,5 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path=public;
 GRANT EXECUTE ON FUNCTION public.generate_monthly_invoices() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.generate_monthly_invoices() TO service_role;
 
--- Create index to improve invoice lookup performance
-CREATE INDEX IF NOT EXISTS idx_invoices_lease_period 
-  ON public.invoices(lease_id, period_start, period_end);
-
--- Create index for unpaid invoices
-CREATE INDEX IF NOT EXISTS idx_invoices_unpaid 
-  ON public.invoices(status, due_date) 
-  WHERE status = 'unpaid';
-
--- Create index for payment lookups
-CREATE INDEX IF NOT EXISTS idx_payments_tenant 
-  ON public.payments(tenant_id, created_at);
-
--- Note: To run this daily, you'll need to either:
--- 1. Use a backend service with a cron job to call: SELECT public.generate_monthly_invoices()
--- 2. Or manually trigger it from your application on the first of each month
--- 3. Or set up a pg_cron extension if your Supabase plan supports it
-
--- For now, you can manually run this query daily/weekly from your app:
--- SELECT public.generate_monthly_invoices();
+-- Test the function by running:
+-- SELECT * FROM public.generate_monthly_invoices();
