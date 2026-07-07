@@ -81,9 +81,17 @@ export default function Invoices() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Invoices</h1>
-        <p className="mt-1 text-sm text-muted-foreground">All billing records across leases.</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Invoices</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Auto-generated on the billing day for every active lease.</p>
+        </div>
+        {canGenerate && (
+          <Button size="sm" variant="outline" onClick={generateNow} disabled={generating}>
+            {generating ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-1.5 h-4 w-4" />}
+            Generate now
+          </Button>
+        )}
       </header>
 
       <div className="flex flex-wrap gap-2">
@@ -97,6 +105,7 @@ export default function Invoices() {
           </SelectContent>
         </Select>
       </div>
+
 
       {items === null ? (
         <div className="flex h-40 items-center justify-center">
