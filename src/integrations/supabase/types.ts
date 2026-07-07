@@ -823,7 +823,12 @@ export type Database = {
         | "reserved"
         | "maintenance"
         | "unavailable"
-      unit_type: "single_room" | "bedsitter" | "double_room"
+      unit_type:
+        | "single_room"
+        | "bedsitter"
+        | "double_room"
+        | "store"
+        | "caretaker_unit"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -979,7 +984,13 @@ export const Constants = {
         "maintenance",
         "unavailable",
       ],
-      unit_type: ["single_room", "bedsitter", "double_room"],
+      unit_type: [
+        "single_room",
+        "bedsitter",
+        "double_room",
+        "store",
+        "caretaker_unit",
+      ],
     },
   },
 } as const
