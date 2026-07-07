@@ -2,8 +2,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Building2, DoorOpen, DoorClosed, Wallet, Users, FileSignature, ReceiptText, AlertTriangle, TrendingUp } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Building2, DoorOpen, DoorClosed, Wallet, Users, FileSignature, ReceiptText, AlertTriangle, TrendingUp, Loader2 } from "lucide-react";
 import { KES } from "@/lib/format";
+import { generateMonthlyInvoices } from "@/lib/invoice-generator";
+import { toast } from "sonner";
 
 interface Stats {
   properties: number;
@@ -23,8 +26,10 @@ export default function Dashboard() {
   const { user, roles } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [generatingInvoices, setGeneratingInvoices] = useState(false);
   const isTenant = roles.includes("tenant");
   const isCaretaker = roles.includes("caretaker");
+  const isAdmin = roles.includes("landlord") || roles.includes("super_admin");
 
   useEffect(() => {
     document.title = "Dashboard · MUSEMBI PMS";
@@ -49,6 +54,22 @@ export default function Dashboard() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTenant, isCaretaker]);
+
+  const handleGenerateInvoices = async () => {
+    setGeneratingInvoices(true);
+    try {
+      const result = await generateMonthlyInvoices();
+      toast.success(`Generated ${result.created} invoices`);
+      // Reload stats
+      if (isTenant) await loadTenantDashboard();
+      else await loadStaffDashboard();
+    } catch (err) {
+      toast.error("Failed to generate invoices");
+      console.error(err);
+    } finally {
+      setGeneratingInvoices(false);
+    }
+  };
 
   const loadTenantDashboard = async () => {
     const [leaseRes, payRes] = await Promise.all([
@@ -240,12 +261,25 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Dashboard</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Welcome{user?.email ? `, ${user.email}` : ""} — role{roles.length > 1 ? "s" : ""}:{" "}
-          <span className="font-medium text-foreground">{roles.join(", ") || "unassigned"}</span>
-        </p>
+      <header className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">Dashboard</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Welcome{user?.email ? `, ${user.email}` : ""} — role{roles.length > 1 ? "s" : ""}:{" "}
+            <span className="font-medium text-foreground">{roles.join(", ") || "unassigned"}</span>
+          </p>
+        </div>
+        {isAdmin && (
+          <Button
+            onClick={handleGenerateInvoices}
+            disabled={generatingInvoices}
+            size="sm"
+            variant="outline"
+          >
+            {generatingInvoices && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Generate Invoices
+          </Button>
+        )}
       </header>
 
       <div
