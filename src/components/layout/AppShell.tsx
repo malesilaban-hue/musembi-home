@@ -3,7 +3,8 @@ import { useState, useEffect } from "react";
 import { SideNav } from "./SideNav";
 import { BottomNav } from "./BottomNav";
 import { TopBar } from "./TopBar";
-import { InstallPrompt } from "@/components/InstallPrompt";
+import { InstallBanner } from "@/components/InstallBanner";
+import { FloatingChat } from "@/components/FloatingChat";
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -42,7 +43,8 @@ export function AppShell() {
           </div>
         </main>
         <BottomNav />
-        <InstallPrompt />
+        <FloatingChat />
+        <InstallBanner />
       </div>
     </div>
   );
