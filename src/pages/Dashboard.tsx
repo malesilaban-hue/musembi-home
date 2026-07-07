@@ -22,16 +22,21 @@ interface Stats {
 export default function Dashboard() {
   const { user, roles } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
   const isTenant = roles.includes("tenant");
   const isCaretaker = roles.includes("caretaker");
 
   useEffect(() => {
     document.title = "Dashboard · MUSEMBI PMS";
-    const load = () => {
-      if (isTenant) void loadTenantDashboard();
-      else void loadStaffDashboard();
+    setLoading(true);
+    const load = async () => {
+      setLoading(true);
+      if (isTenant) await loadTenantDashboard();
+      else await loadStaffDashboard();
+      setLoading(false);
     };
-    load();
+    void load();
+    
     const ch = supabase
       .channel("dash-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "payments" }, load)
@@ -84,40 +89,121 @@ export default function Dashboard() {
   };
 
   const loadStaffDashboard = async () => {
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-    const [pCount, uRes, tCount, lCount, invRes, monthPayRes, todayPayRes] = await Promise.all([
-      supabase.from("properties").select("*", { count: "exact", head: true }),
-      supabase.from("units").select("status,rent"),
-      supabase.from("tenants").select("*", { count: "exact", head: true }),
-      supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active"),
-      supabase.from("invoices").select("balance,status"),
-      supabase.from("payments").select("amount").gte("paid_at", monthStart),
-      supabase.from("payments").select("amount").gte("paid_at", todayStart),
-    ]);
-    const uList = uRes.data ?? [];
-    const inv = invRes.data ?? [];
-    const monthPay = monthPayRes.data ?? [];
-    const todayPay = todayPayRes.data ?? [];
+    try {
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      
+      // For caretakers, get assigned properties first
+      let assignedPropertyIds: string[] = [];
+      if (isCaretaker && user) {
+        const { data: cpData } = await supabase
+          .from("caretaker_properties")
+          .select("property_id")
+          .eq("user_id", user.id);
+        assignedPropertyIds = (cpData ?? []).map((cp) => cp.property_id);
+      }
 
-    setStats({
-      properties: pCount.count ?? 0,
-      units: uList.length,
-      vacant: uList.filter((u) => u.status === "vacant").length,
-      expected_rent: uList
-        .filter((u) => u.status === "occupied")
-        .reduce((sum, u) => sum + Number(u.rent || 0), 0),
-      monthly_expected_rent: uList
-        .filter((u) => u.status === "occupied")
-        .reduce((sum, u) => sum + Number(u.rent || 0), 0),
-      collected_month: monthPay.reduce((s, p) => s + Number(p.amount || 0), 0),
-      collected_today: todayPay.reduce((s, p) => s + Number(p.amount || 0), 0),
-      tenants: tCount.count ?? 0,
-      active_leases: lCount.count ?? 0,
-      outstanding: inv.reduce((s, i) => s + Number(i.balance || 0), 0),
-      overdue: inv.filter((i) => i.status === "overdue").length,
-    });
+      // If caretaker has no properties, show empty state
+      if (isCaretaker && assignedPropertyIds.length === 0) {
+        setStats({
+          properties: 0,
+          units: 0,
+          vacant: 0,
+          expected_rent: 0,
+          monthly_expected_rent: 0,
+          collected_month: 0,
+          collected_today: 0,
+          tenants: 0,
+          active_leases: 0,
+          outstanding: 0,
+          overdue: 0,
+        });
+        return;
+      }
+
+      // For caretakers, get unit IDs from assigned properties
+      let assignedUnitIds: string[] = [];
+      if (isCaretaker && assignedPropertyIds.length > 0) {
+        const { data: unitsData } = await supabase
+          .from("units")
+          .select("id")
+          .in("property_id", assignedPropertyIds);
+        assignedUnitIds = (unitsData ?? []).map((u) => u.id);
+      }
+
+      // For caretakers, get tenant IDs from leases on assigned units
+      let assignedTenantIds: string[] = [];
+      if (isCaretaker && assignedUnitIds.length > 0) {
+        const { data: leasesData } = await supabase
+          .from("leases")
+          .select("tenant_id")
+          .in("unit_id", assignedUnitIds);
+        assignedTenantIds = (leasesData ?? []).map((l) => l.tenant_id);
+      }
+
+      // Execute all queries in parallel
+      const results = await Promise.allSettled([
+        supabase.from("properties").select("*", { count: "exact", head: true }),
+        isCaretaker && assignedPropertyIds.length > 0
+          ? supabase.from("units").select("status,rent").in("property_id", assignedPropertyIds)
+          : supabase.from("units").select("status,rent"),
+        isCaretaker && assignedUnitIds.length > 0
+          ? supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active").in("unit_id", assignedUnitIds)
+          : supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active"),
+        supabase.from("tenants").select("*", { count: "exact", head: true }),
+        supabase.from("invoices").select("balance,status"),
+        isCaretaker && assignedTenantIds.length > 0
+          ? supabase.from("payments").select("amount").gte("paid_at", monthStart).in("tenant_id", assignedTenantIds)
+          : supabase.from("payments").select("amount").gte("paid_at", monthStart),
+        isCaretaker && assignedTenantIds.length > 0
+          ? supabase.from("payments").select("amount").gte("paid_at", todayStart).in("tenant_id", assignedTenantIds)
+          : supabase.from("payments").select("amount").gte("paid_at", todayStart),
+      ]);
+
+      // Extract results safely
+      const pCount = results[0].status === "fulfilled" ? results[0].value.count ?? 0 : 0;
+      const uRes = results[1].status === "fulfilled" ? results[1].value.data ?? [] : [];
+      const lCount = results[2].status === "fulfilled" ? results[2].value.count ?? 0 : 0;
+      const tCount = results[3].status === "fulfilled" ? results[3].value.count ?? 0 : 0;
+      const invRes = results[4].status === "fulfilled" ? results[4].value.data ?? [] : [];
+      const monthPayRes = results[5].status === "fulfilled" ? results[5].value.data ?? [] : [];
+      const todayPayRes = results[6].status === "fulfilled" ? results[6].value.data ?? [] : [];
+
+      setStats({
+        properties: isCaretaker ? assignedPropertyIds.length : pCount,
+        units: uRes.length,
+        vacant: uRes.filter((u: any) => u.status === "vacant").length,
+        expected_rent: uRes
+          .filter((u: any) => u.status === "occupied")
+          .reduce((sum: number, u: any) => sum + Number(u.rent || 0), 0),
+        monthly_expected_rent: uRes
+          .filter((u: any) => u.status === "occupied")
+          .reduce((sum: number, u: any) => sum + Number(u.rent || 0), 0),
+        collected_month: monthPayRes.reduce((s: number, p: any) => s + Number(p.amount || 0), 0),
+        collected_today: todayPayRes.reduce((s: number, p: any) => s + Number(p.amount || 0), 0),
+        tenants: tCount,
+        active_leases: lCount,
+        outstanding: invRes.reduce((s: number, i: any) => s + Number(i.balance || 0), 0),
+        overdue: invRes.filter((i: any) => i.status === "overdue").length,
+      });
+    } catch (err) {
+      console.error("Error loading staff dashboard:", err);
+      // Set default stats on error
+      setStats({
+        properties: 0,
+        units: 0,
+        vacant: 0,
+        expected_rent: 0,
+        monthly_expected_rent: 0,
+        collected_month: 0,
+        collected_today: 0,
+        tenants: 0,
+        active_leases: 0,
+        outstanding: 0,
+        overdue: 0,
+      });
+    }
   };
 
   const staffCards = [
@@ -181,7 +267,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent className="relative p-4 pt-1 md:p-5 md:pt-1">
                 <div className="text-xl font-extrabold tracking-tight text-foreground md:text-2xl">
-                  {value}
+                  {loading ? <span className="animate-pulse">—</span> : value}
                 </div>
               </CardContent>
               <div className="pointer-events-none absolute inset-x-3 -bottom-3 h-4 rounded-full bg-black/25 blur-lg dark:bg-black/60" />

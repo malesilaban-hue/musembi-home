@@ -34,29 +34,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRoles([]);
       return;
     }
-    const { data } = await supabase.from("user_roles").select("role").eq("user_id", uid);
-    setRoles((data ?? []).map((r) => r.role as AppRole));
+    try {
+      const { data, error } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", uid)
+        .limit(1)
+        .maybeSingle();
+      
+      if (error) {
+        console.warn("Error loading roles:", error.message);
+        setRoles([]);
+        return;
+      }
+      
+      if (data?.role) {
+        setRoles([data.role as AppRole]);
+      } else {
+        setRoles([]);
+      }
+    } catch (err: any) {
+      console.warn("Exception loading roles:", err?.message);
+      setRoles([]);
+    }
   };
 
   useEffect(() => {
-    // 1) Register listener FIRST
-    const { data: sub } = supabase.auth.onAuthStateChange((_evt, s) => {
+    setLoading(true);
+    
+    // Register listener FIRST
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_evt, s) => {
       setSession(s);
       setUser(s?.user ?? null);
-      // Defer role load off the listener callback
+      
+      // Load roles in background (don't block UI)
       if (s?.user) {
-        setTimeout(() => void loadRoles(s.user.id), 0);
+        loadRoles(s.user.id).catch(err => console.error("Error loading roles:", err));
       } else {
         setRoles([]);
       }
     });
-    // 2) Then fetch existing session
+    
+    // Fetch existing session and mark loading done IMMEDIATELY
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setUser(s?.user ?? null);
-      if (s?.user) void loadRoles(s.user.id);
-      setLoading(false);
+      setLoading(false); // Mark done immediately - don't wait for roles
+      
+      // Load roles in background after UI is responsive
+      if (s?.user) {
+        loadRoles(s.user.id).catch(err => console.error("Error loading roles:", err));
+      }
     });
+    
     return () => sub.subscription.unsubscribe();
   }, []);
 
@@ -66,7 +96,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    console.log("Starting sign out...");
+    // Clear state immediately for faster UI update
+    setUser(null);
+    setSession(null);
+    setRoles([]);
+    
+    try {
+      // Try to sign out from Supabase, but don't wait too long
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("timeout")), 2000)
+      );
+      
+      await Promise.race([supabase.auth.signOut(), timeoutPromise]);
+      console.log("Sign out completed successfully");
+    } catch (err: any) {
+      // Log the error but don't throw - UI is already cleared
+      console.warn("Sign out API call failed (UI already cleared):", err?.message);
+    }
   };
 
   const refreshRoles = async () => {

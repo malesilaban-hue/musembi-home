@@ -1,7 +1,9 @@
 import { Moon, Sun, LogOut, Monitor, Menu } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "@/components/ThemeProvider";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -25,8 +27,27 @@ interface TopBarProps {
 }
 
 export function TopBar({ onMenuClick }: TopBarProps) {
+  const navigate = useNavigate();
   const { theme, setTheme, resolved } = useTheme();
   const { user, roles, signOut } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      console.log("Logout initiated");
+      
+      // Call signOut which clears UI immediately and tries API in background
+      await signOut();
+      
+      console.log("Sign out completed, redirecting to auth");
+      // Navigate away immediately - UI is already cleared
+      navigate("/auth", { replace: true });
+      toast.success("Signed out");
+    } catch (err) {
+      console.error("Sign out error:", err);
+      // Still navigate away - UI was already cleared in signOut()
+      navigate("/auth", { replace: true });
+    }
+  };
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-background/80 px-4 backdrop-blur md:h-16 md:px-8">
@@ -74,7 +95,7 @@ export function TopBar({ onMenuClick }: TopBarProps) {
           variant="ghost"
           size="icon"
           aria-label="Sign out"
-          onClick={() => void signOut()}
+          onClick={handleLogout}
         >
           <LogOut className="h-4 w-4" />
         </Button>

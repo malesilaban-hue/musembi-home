@@ -20,10 +20,14 @@ const items: Item[] = [
   { to: "/profile", label: "Profile", icon: User },
 ];
 
-export function SideNav() {
+interface SideNavProps {
+  onClose?: () => void;
+}
+
+export function SideNav({ onClose }: SideNavProps) {
   const { hasRole } = useAuth();
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+    <aside className="flex w-full flex-col border-r border-border bg-sidebar">
       <div className="flex h-16 items-center gap-2 border-b border-border px-5">
         <img src={logo} alt="MUSEMBI PMS" width={32} height={32} className="h-8 w-8" />
         <div className="flex flex-col leading-tight">
@@ -39,6 +43,7 @@ export function SideNav() {
               key={to}
               to={to}
               end
+              onClick={onClose}
               className={({ isActive }) =>
                 `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                   isActive

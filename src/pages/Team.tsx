@@ -55,23 +55,48 @@ export default function Team() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const reload = async () => {
-    const [p, r, pr, a] = await Promise.all([
-      supabase.from("profiles").select("id,full_name,phone"),
-      supabase.from("user_roles").select("user_id,role"),
-      supabase.from("properties").select("id,name").order("name"),
-      supabase.from("caretaker_properties").select("user_id,property_id"),
-    ]);
-    if (p.error) toast.error(p.error.message);
-    setProfiles(p.data ?? []);
-    setRoles((r.data ?? []) as RoleRow[]);
-    setProperties(pr.data ?? []);
-    setAssignments(a.data ?? []);
+    try {
+      const [p, r, pr, a] = await Promise.all([
+        supabase.from("profiles").select("id,full_name,phone"),
+        supabase.from("user_roles").select("user_id,role"),
+        supabase.from("properties").select("id,name").order("name"),
+        supabase.from("caretaker_properties").select("user_id,property_id"),
+      ]);
+      
+      if (p.error) {
+        console.error("Profiles error:", p.error);
+        toast.error("Failed to load profiles: " + p.error.message);
+      }
+      if (r.error) {
+        console.error("Roles error:", r.error);
+        toast.error("Failed to load roles: " + r.error.message);
+      }
+      if (pr.error) {
+        console.error("Properties error:", pr.error);
+        toast.error("Failed to load properties: " + pr.error.message);
+      }
+      if (a.error) {
+        console.error("Assignments error:", a.error);
+        toast.error("Failed to load assignments: " + a.error.message);
+      }
+      
+      console.log("Profiles data:", p.data);
+      setProfiles(p.data ?? []);
+      setRoles((r.data ?? []) as RoleRow[]);
+      setProperties(pr.data ?? []);
+      setAssignments(a.data ?? []);
+    } catch (err) {
+      console.error("Reload error:", err);
+      toast.error("Error loading team data");
+    }
   };
 
   useEffect(() => {
     document.title = "Team · MUSEMBI PMS";
-    if (canManage) void reload();
-  }, [canManage]);
+    console.log("Team page loaded, canManage:", canManage);
+    // Always try to load, we'll show permission message if not authorized
+    void reload();
+  }, []);
 
   const rolesByUser = useMemo(() => {
     const m = new Map<string, AppRole[]>();

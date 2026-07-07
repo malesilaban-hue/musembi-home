@@ -47,12 +47,10 @@ const schema = z.object({
   full_name: z.string().trim().min(2, "Full name required").max(120),
   phone: z.string().trim().min(7, "Phone required").max(20),
   alt_phone: z.string().trim().max(20).optional().or(z.literal("")),
-  email: z.string().trim().email().max(255).optional().or(z.literal("")),
   national_id: z.string().trim().max(30).optional().or(z.literal("")),
   emergency_name: z.string().trim().max(120).optional().or(z.literal("")),
   emergency_phone: z.string().trim().max(20).optional().or(z.literal("")),
   emergency_relation: z.string().trim().max(60).optional().or(z.literal("")),
-  occupation: z.string().trim().max(120).optional().or(z.literal("")),
   unit_id: z.string().optional().or(z.literal("")),
 });
 type FormValues = z.infer<typeof schema>;
@@ -176,14 +174,15 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
   const selectedUnitId = watch("unit_id");
 
   useEffect(() => {
-    const loadUnits = async () => {
-      const { data, error } = await supabase
+    const loadData = async () => {
+      // Load units
+      const { data: unitsData, error: unitsError } = await supabase
         .from("units")
         .select("id,house_number,unit_type,floor_level,rent,status,properties(name)")
         .order("house_number");
-      if (!error) setUnits(data ?? []);
+      if (!unitsError) setUnits(unitsData ?? []);
     };
-    void loadUnits();
+    void loadData();
   }, []);
 
   const filteredUnits = units.filter((u) =>
@@ -254,9 +253,6 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
           <Field label="Alt phone">
             <Input {...register("alt_phone")} />
           </Field>
-          <Field label="Email">
-            <Input type="email" {...register("email")} />
-          </Field>
           <Field label="National ID">
             <Input {...register("national_id")} />
           </Field>
@@ -269,11 +265,6 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
           <Field label="Emergency relation">
             <Input {...register("emergency_relation")} placeholder="Spouse / Parent…" />
           </Field>
-          <div className="sm:col-span-2">
-            <Field label="Occupation">
-              <Input {...register("occupation")} />
-            </Field>
-          </div>
 
           {/* Unit Assignment Section */}
           <div className="sm:col-span-2 border-t pt-4">

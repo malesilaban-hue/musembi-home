@@ -5,6 +5,9 @@ import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -12,9 +15,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Loader2, Upload, FileText, Download, Trash2, ArrowLeft } from "lucide-react";
+import { Loader2, Upload, FileText, Download, Trash2, ArrowLeft, Pencil, Home } from "lucide-react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import { fmtDate, KES } from "@/lib/format";
+
+const editSchema = z.object({
+  full_name: z.string().trim().min(2, "Full name required").max(120),
+  phone: z.string().trim().min(7, "Phone required").max(20),
+  alt_phone: z.string().trim().max(20).optional().or(z.literal("")),
+  email: z.string().trim().email().max(255).optional().or(z.literal("")),
+  national_id: z.string().trim().max(30).optional().or(z.literal("")),
+  emergency_name: z.string().trim().max(120).optional().or(z.literal("")),
+  emergency_phone: z.string().trim().max(20).optional().or(z.literal("")),
+  emergency_relation: z.string().trim().max(60).optional().or(z.literal("")),
+  occupation: z.string().trim().max(120).optional().or(z.literal("")),
+  unit_id: z.string().optional().or(z.literal("")),
+});
+type EditFormValues = z.infer<typeof editSchema>;
 
 interface Tenant {
   id: string;
@@ -31,6 +60,19 @@ interface Tenant {
   employer: string | null;
   notes: string | null;
 }
+
+interface Unit {
+  id: string;
+  house_number: string;
+  unit_type: string;
+  floor_level: string;
+  rent: number;
+  status: string;
+  properties: {
+    name: string;
+  } | null;
+}
+
 interface Doc {
   id: string;
   doc_type: string;
@@ -60,11 +102,14 @@ export default function TenantDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, hasRole } = useAuth();
   const canManage = hasRole(["super_admin", "landlord", "accountant", "caretaker"]);
+  const canDelete = hasRole(["super_admin", "landlord"]);
   const [tenant, setTenant] = useState<Tenant | null>(null);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
   const [uploading, setUploading] = useState(false);
   const [docType, setDocType] = useState<string>("national_id");
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = async () => {
@@ -140,6 +185,17 @@ export default function TenantDetail() {
     void load();
   };
 
+  const deleteTenant = async () => {
+    if (!id) return;
+    if (!confirm("Are you sure you want to delete this tenant? This cannot be undone.")) return;
+    setDeleteLoading(true);
+    const { error } = await supabase.from("tenants").delete().eq("id", id);
+    setDeleteLoading(false);
+    if (error) return toast.error(error.message);
+    toast.success("Tenant deleted");
+    window.location.href = "/tenants";
+  };
+
   if (!tenant) {
     return (
       <div className="flex h-40 items-center justify-center">
@@ -150,12 +206,43 @@ export default function TenantDetail() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link to="/tenants" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3.5 w-3.5" /> Tenants
-        </Link>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{tenant.full_name}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{tenant.phone}{tenant.email ? ` · ${tenant.email}` : ""}</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <Link to="/tenants" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-3.5 w-3.5" /> Tenants
+          </Link>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight md:text-3xl">{tenant.full_name}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{tenant.phone}{tenant.email ? ` · ${tenant.email}` : ""}</p>
+        </div>
+        <div className="flex gap-2">
+          {canManage && (
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Pencil className="mr-1 h-4 w-4" /> Edit
+                </Button>
+              </DialogTrigger>
+              <EditTenantDialog
+                tenant={tenant}
+                onSaved={() => {
+                  setEditOpen(false);
+                  void load();
+                }}
+              />
+            </Dialog>
+          )}
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={deleteTenant}
+              disabled={deleteLoading}
+            >
+              {deleteLoading && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -277,6 +364,237 @@ function Info({ k, v }: { k: string; v: string | null | undefined }) {
     <div>
       <div className="text-xs text-muted-foreground">{k}</div>
       <div className="font-medium">{v || "—"}</div>
+    </div>
+  );
+}
+
+function EditTenantDialog({
+  tenant,
+  onSaved,
+}: {
+  tenant: Tenant;
+  onSaved: () => void;
+}) {
+  const { user } = useAuth();
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [unitSearch, setUnitSearch] = useState("");
+  const [showUnitList, setShowUnitList] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<EditFormValues>({
+    resolver: zodResolver(editSchema),
+    defaultValues: {
+      full_name: tenant.full_name,
+      phone: tenant.phone,
+      alt_phone: tenant.alt_phone ?? "",
+      email: tenant.email ?? "",
+      national_id: tenant.national_id ?? "",
+      emergency_name: tenant.emergency_name ?? "",
+      emergency_phone: tenant.emergency_phone ?? "",
+      emergency_relation: tenant.emergency_relation ?? "",
+      occupation: tenant.occupation ?? "",
+      unit_id: "",
+    },
+  });
+
+  const selectedUnitId = watch("unit_id");
+
+  useEffect(() => {
+    const loadUnits = async () => {
+      const { data, error } = await supabase
+        .from("units")
+        .select("id,house_number,unit_type,floor_level,rent,status,properties(name)")
+        .eq("status", "vacant")
+        .order("house_number");
+      if (!error) setUnits(data ?? []);
+    };
+    void loadUnits();
+  }, []);
+
+  const filteredUnits = units.filter((u) =>
+    u.house_number.toLowerCase().includes(unitSearch.toLowerCase())
+  );
+
+  const onSubmit = async (values: EditFormValues) => {
+    const payload: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(values)) {
+      if (k === "unit_id") continue; // Handle separately
+      payload[k] = v === "" ? null : v;
+    }
+
+    const { error } = await supabase
+      .from("tenants")
+      .update(payload as never)
+      .eq("id", tenant.id);
+
+    if (error) return toast.error(error.message);
+
+    // If a unit is selected, create a lease and update unit status
+    if (values.unit_id && user) {
+      const unit = units.find((u) => u.id === values.unit_id);
+      const today = new Date().toISOString().slice(0, 10);
+      
+      const { error: leaseError } = await supabase.from("leases").insert({
+        tenant_id: tenant.id,
+        unit_id: values.unit_id,
+        start_date: today,
+        monthly_rent: unit?.rent ?? 0,
+        deposit: unit?.rent ?? 0,
+        billing_day: 5,
+        status: "active",
+        created_by: user.id,
+      } as never);
+      
+      const { error: unitErr } = await supabase
+        .from("units")
+        .update({ status: "occupied" } as never)
+        .eq("id", values.unit_id);
+
+      if (leaseError || unitErr) {
+        toast.warning("Tenant updated but lease/unit assignment failed");
+      } else {
+        toast.success("Tenant updated & unit assigned with lease created");
+      }
+    } else {
+      toast.success("Tenant updated");
+    }
+
+    reset();
+    onSaved();
+  };
+
+  const selectedUnit = units.find((u) => u.id === selectedUnitId);
+
+  return (
+    <DialogContent className="max-h-[90vh] overflow-y-auto">
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <DialogHeader>
+          <DialogTitle>Edit tenant</DialogTitle>
+          <DialogDescription>Update tenant information and assign unit.</DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <Field label="Full name" error={errors.full_name?.message}>
+            <Input {...register("full_name")} />
+          </Field>
+          <Field label="Phone" error={errors.phone?.message}>
+            <Input {...register("phone")} placeholder="+2547…" />
+          </Field>
+          <Field label="Alt phone">
+            <Input {...register("alt_phone")} />
+          </Field>
+          <Field label="Email">
+            <Input type="email" {...register("email")} />
+          </Field>
+          <Field label="National ID">
+            <Input {...register("national_id")} />
+          </Field>
+          <Field label="Emergency name">
+            <Input {...register("emergency_name")} />
+          </Field>
+          <Field label="Emergency phone">
+            <Input {...register("emergency_phone")} />
+          </Field>
+          <Field label="Emergency relation">
+            <Input {...register("emergency_relation")} placeholder="Spouse / Parent…" />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label="Occupation">
+              <Input {...register("occupation")} />
+            </Field>
+          </div>
+
+          {/* Unit Assignment Section */}
+          <div className="sm:col-span-2 border-t pt-4">
+            <div className="space-y-3">
+              <Label className="font-semibold text-sm">Assign Unit (Optional)</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-unit-search" className="text-xs">
+                  Search unit by number
+                </Label>
+                <div className="relative">
+                  <Input
+                    id="edit-unit-search"
+                    placeholder="Search unit number (e.g., A-01)…"
+                    value={unitSearch}
+                    onChange={(e) => {
+                      setUnitSearch(e.target.value);
+                      setShowUnitList(true);
+                    }}
+                    onFocus={() => setShowUnitList(true)}
+                  />
+                  {showUnitList && unitSearch && filteredUnits.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded-md border border-input bg-popover p-2 shadow-md">
+                      {filteredUnits.map((u) => (
+                        <button
+                          key={u.id}
+                          type="button"
+                          onClick={() => {
+                            setValue("unit_id", u.id);
+                            setUnitSearch(u.house_number);
+                            setShowUnitList(false);
+                          }}
+                          className="block w-full rounded px-2 py-2 text-left text-sm hover:bg-accent"
+                        >
+                          <div className="font-medium">{u.house_number}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {u.unit_type} • Floor {u.floor_level} • KES {u.rent?.toLocaleString()}
+                            {u.properties?.name && ` • ${u.properties.name}`}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {selectedUnit && (
+                  <div className="flex items-start gap-2 rounded-lg bg-muted p-3">
+                    <Home className="h-4 w-4 mt-0.5 text-primary flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium text-sm">{selectedUnit.house_number}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {selectedUnit.unit_type} • Floor {selectedUnit.floor_level} • KES{" "}
+                        {selectedUnit.rent?.toLocaleString()}
+                      </div>
+                      {selectedUnit.properties?.name && (
+                        <div className="text-xs text-muted-foreground">{selectedUnit.properties.name}</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        <DialogFooter className="mt-6">
+          <Button type="submit" disabled={isSubmitting}>
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save changes
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      {children}
+      {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -23,14 +24,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Loader2, DoorClosed, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, DoorClosed, Pencil, Users } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
 
 type UnitStatus = "vacant" | "occupied" | "reserved" | "maintenance" | "unavailable";
-type UnitType = "single_room" | "bedsitter" | "double_room";
+type UnitType = "single_room" | "bedsitter" | "double_room" | "store" | "caretaker_unit";
 type FloorLevel = "ground" | "first" | "second" | "third" | "fourth" | "fifth";
 
 interface Property {
@@ -53,7 +54,7 @@ interface Unit {
 
 const unitSchema = z.object({
   house_number: z.string().trim().min(1, "Required").max(30),
-  unit_type: z.enum(["single_room", "bedsitter", "double_room"]),
+  unit_type: z.enum(["single_room", "bedsitter", "double_room", "store", "caretaker_unit"]),
   floor_level: z.enum(["ground", "first", "second", "third", "fourth", "fifth"]),
   rent: z.coerce.number().min(0).max(10_000_000),
   deposit: z.coerce.number().min(0).max(10_000_000),
@@ -71,13 +72,18 @@ const statusColor: Record<UnitStatus, string> = {
 
 export default function PropertyDetail() {
   const { id } = useParams<{ id: string }>();
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const canManage = hasRole(["super_admin", "landlord"]);
+  const isCaretaker = hasRole(["caretaker"]);
+  const canCreateUnit = canManage || isCaretaker;
   const [property, setProperty] = useState<Property | null>(null);
   const [units, setUnits] = useState<Unit[] | null>(null);
+  const [unitLeases, setUnitLeases] = useState<Record<string, boolean>>({});
   const [open, setOpen] = useState(false);
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  const [assignUnit, setAssignUnit] = useState<Unit | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -87,18 +93,26 @@ export default function PropertyDetail() {
   }, [id]);
 
   const loadAll = async () => {
-    const [{ data: p, error: pe }, { data: u, error: ue }] = await Promise.all([
+    const [{ data: p, error: pe }, { data: u, error: ue }, { data: l, error: le }] = await Promise.all([
       supabase.from("properties").select("id,name,address,city,county,theme").eq("id", id!).maybeSingle(),
       supabase
         .from("units")
         .select("id,house_number,unit_type,floor_level,rent,deposit,status")
         .eq("property_id", id!)
         .order("house_number"),
+      supabase.from("leases").select("unit_id").eq("status", "active"),
     ]);
     if (pe) toast.error(pe.message);
     if (ue) toast.error(ue.message);
     setProperty(p as Property | null);
     setUnits((u ?? []) as Unit[]);
+    
+    // Build a map of which units have active leases
+    const leasedUnits: Record<string, boolean> = {};
+    (l ?? []).forEach((lease: any) => {
+      leasedUnits[lease.unit_id] = true;
+    });
+    setUnitLeases(leasedUnits);
   };
 
   usePropertyTheme(property?.theme);
@@ -130,7 +144,7 @@ export default function PropertyDetail() {
               "No address recorded"}
           </p>
         </div>
-        {canManage && (
+        {canCreateUnit && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -182,32 +196,63 @@ export default function PropertyDetail() {
                             <Badge className={statusColor[u.status]} variant="secondary">
                               {u.status}
                             </Badge>
-                            {canManage && (
-                              <Dialog open={editOpen && editingUnit?.id === u.id} onOpenChange={(open) => {
-                                if (!open) setEditingUnit(null);
-                                setEditOpen(open);
-                              }}>
-                                <DialogTrigger asChild>
-                                  <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setEditingUnit(u)}
-                                    className="h-8 w-8 p-0"
-                                  >
-                                    <Pencil className="h-4 w-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                {editingUnit?.id === u.id && (
-                                  <EditUnitDialog
-                                    unit={editingUnit}
-                                    onSaved={() => {
-                                      setEditOpen(false);
-                                      setEditingUnit(null);
-                                      void loadAll();
-                                    }}
-                                  />
+                            {canCreateUnit && (
+                              <>
+                                {u.status === "occupied" && !unitLeases[u.id] && (
+                                  <Dialog open={assignOpen && assignUnit?.id === u.id} onOpenChange={(open) => {
+                                    if (!open) setAssignUnit(null);
+                                    setAssignOpen(open);
+                                  }}>
+                                    <DialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setAssignUnit(u)}
+                                        className="h-8 w-8 p-0"
+                                        title="Assign tenant to this unit"
+                                      >
+                                        <Users className="h-4 w-4" />
+                                      </Button>
+                                    </DialogTrigger>
+                                    {assignUnit?.id === u.id && (
+                                      <AssignTenantDialog
+                                        unit={assignUnit}
+                                        userId={user!.id}
+                                        onAssigned={() => {
+                                          setAssignOpen(false);
+                                          setAssignUnit(null);
+                                          void loadAll();
+                                        }}
+                                      />
+                                    )}
+                                  </Dialog>
                                 )}
-                              </Dialog>
+                                <Dialog open={editOpen && editingUnit?.id === u.id} onOpenChange={(open) => {
+                                  if (!open) setEditingUnit(null);
+                                  setEditOpen(open);
+                                }}>
+                                  <DialogTrigger asChild>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => setEditingUnit(u)}
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                  </DialogTrigger>
+                                  {editingUnit?.id === u.id && (
+                                    <EditUnitDialog
+                                      unit={editingUnit}
+                                      onSaved={() => {
+                                        setEditOpen(false);
+                                        setEditingUnit(null);
+                                        void loadAll();
+                                      }}
+                                    />
+                                  )}
+                                </Dialog>
+                              </>
                             )}
                           </div>
                         </CardHeader>
@@ -310,7 +355,14 @@ function UnitDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="u-type">Unit type</Label>
-            <Select value={unitType} onValueChange={(v) => setValue("unit_type", v as UnitType)}>
+            <Select value={unitType} onValueChange={(v) => {
+              setValue("unit_type", v as UnitType);
+              // Auto-clear rent for store and caretaker_unit
+              if (v === "store" || v === "caretaker_unit") {
+                setValue("rent", 0);
+                setValue("deposit", 0);
+              }
+            }}>
               <SelectTrigger id="u-type">
                 <SelectValue />
               </SelectTrigger>
@@ -318,6 +370,8 @@ function UnitDialog({
                 <SelectItem value="single_room">Single room</SelectItem>
                 <SelectItem value="bedsitter">Bedsitter</SelectItem>
                 <SelectItem value="double_room">Double room</SelectItem>
+                <SelectItem value="store">Store</SelectItem>
+                <SelectItem value="caretaker_unit">Caretaker unit</SelectItem>
               </SelectContent>
             </Select>
             {errors.unit_type && (
@@ -435,7 +489,14 @@ function EditUnitDialog({ unit, onSaved }: { unit: Unit; onSaved: () => void }) 
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="e-type">Unit type</Label>
-            <Select value={unitType} onValueChange={(v) => setValue("unit_type", v as UnitType)}>
+            <Select value={unitType} onValueChange={(v) => {
+              setValue("unit_type", v as UnitType);
+              // Auto-clear rent for store and caretaker_unit
+              if (v === "store" || v === "caretaker_unit") {
+                setValue("rent", 0);
+                setValue("deposit", 0);
+              }
+            }}>
               <SelectTrigger id="e-type">
                 <SelectValue />
               </SelectTrigger>
@@ -443,6 +504,8 @@ function EditUnitDialog({ unit, onSaved }: { unit: Unit; onSaved: () => void }) 
                 <SelectItem value="single_room">Single room</SelectItem>
                 <SelectItem value="bedsitter">Bedsitter</SelectItem>
                 <SelectItem value="double_room">Double room</SelectItem>
+                <SelectItem value="store">Store</SelectItem>
+                <SelectItem value="caretaker_unit">Caretaker unit</SelectItem>
               </SelectContent>
             </Select>
             {errors.unit_type && (
@@ -496,6 +559,144 @@ function EditUnitDialog({ unit, onSaved }: { unit: Unit; onSaved: () => void }) 
           <Button type="submit" disabled={isSubmitting}>
             {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save changes
+          </Button>
+        </DialogFooter>
+      </form>
+    </DialogContent>
+  );
+}
+
+
+const assignTenantSchema = z.object({
+  tenant_id: z.string().min(1, "Select a tenant"),
+});
+type AssignTenantValues = z.infer<typeof assignTenantSchema>;
+
+interface TenantOption {
+  id: string;
+  full_name: string;
+}
+
+function AssignTenantDialog({
+  unit,
+  userId,
+  onAssigned,
+}: {
+  unit: Unit;
+  userId: string;
+  onAssigned: () => void;
+}) {
+  const [tenants, setTenants] = useState<TenantOption[]>([]);
+  const [tenantSearch, setTenantSearch] = useState("");
+  const [showTenantList, setShowTenantList] = useState(false);
+
+  const {
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<AssignTenantValues>({
+    resolver: zodResolver(assignTenantSchema),
+  });
+
+  const selectedTenantId = watch("tenant_id");
+
+  useEffect(() => {
+    const loadTenants = async () => {
+      const { data, error } = await supabase
+        .from("tenants")
+        .select("id,full_name")
+        .order("full_name");
+      if (!error) setTenants(data ?? []);
+    };
+    void loadTenants();
+  }, []);
+
+  const filteredTenants = tenants.filter((t) =>
+    t.full_name.toLowerCase().includes(tenantSearch.toLowerCase())
+  );
+
+  const onSubmit = async (values: AssignTenantValues) => {
+    const tenant = tenants.find((t) => t.id === values.tenant_id);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const { error: leaseError } = await supabase.from("leases").insert({
+      tenant_id: values.tenant_id,
+      unit_id: unit.id,
+      start_date: today,
+      monthly_rent: unit.rent,
+      deposit: unit.deposit,
+      billing_day: 5,
+      status: "active",
+      created_by: userId,
+    } as never);
+
+    if (leaseError) return toast.error(leaseError.message);
+    toast.success(`${tenant?.full_name} assigned to Unit ${unit.house_number}`);
+    onAssigned();
+  };
+
+  const selectedTenant = tenants.find((t) => t.id === selectedTenantId);
+
+  return (
+    <DialogContent>
+      <form onSubmit={handleSubmit(onSubmit)}>
+        <DialogHeader>
+          <DialogTitle>Assign Tenant</DialogTitle>
+          <DialogDescription>Assign a tenant to Unit {unit.house_number}</DialogDescription>
+        </DialogHeader>
+        <div className="mt-4 space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="tenant-search" className="text-xs">
+              Search tenant by name
+            </Label>
+            <div className="relative">
+              <Input
+                id="tenant-search"
+                placeholder="Enter tenant name…"
+                value={tenantSearch}
+                onChange={(e) => {
+                  setTenantSearch(e.target.value);
+                  setShowTenantList(true);
+                }}
+                onFocus={() => setShowTenantList(true)}
+              />
+              {showTenantList && tenantSearch && filteredTenants.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-10 mt-1 max-h-48 overflow-y-auto rounded-md border border-input bg-popover p-2 shadow-md">
+                  {filteredTenants.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setValue("tenant_id", t.id);
+                        setTenantSearch(t.full_name);
+                        setShowTenantList(false);
+                      }}
+                      className="block w-full rounded px-2 py-2 text-left text-sm hover:bg-accent"
+                    >
+                      <div className="font-medium">{t.full_name}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {errors.tenant_id && <p className="text-xs text-destructive">{errors.tenant_id.message}</p>}
+          </div>
+          {selectedTenant && (
+            <div className="rounded-lg bg-muted p-3">
+              <div className="text-sm font-medium">{selectedTenant.full_name}</div>
+              <div className="mt-2 text-xs text-muted-foreground">
+                <div>Unit: {unit.house_number}</div>
+                <div>Type: {unit.unit_type.replace(/_/g, " ")}</div>
+                <div>Rent: KES {Number(unit.rent).toLocaleString("en-KE")}/month</div>
+              </div>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="mt-6">
+          <Button type="submit" disabled={isSubmitting || !selectedTenantId}>
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Create Lease & Assign
           </Button>
         </DialogFooter>
       </form>

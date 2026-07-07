@@ -44,6 +44,7 @@ type FormValues = z.infer<typeof schema>;
 export default function Properties() {
   const { hasRole, user } = useAuth();
   const canCreate = hasRole(["super_admin", "landlord"]);
+  const isCaretaker = hasRole(["caretaker"]);
   const [items, setItems] = useState<Property[] | null>(null);
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -54,15 +55,52 @@ export default function Properties() {
   }, []);
 
   const reload = async () => {
-    const { data, error } = await supabase
-      .from("properties")
-      .select("id,name,address,city,county,created_at")
-      .order("created_at", { ascending: false });
-    if (error) {
-      toast.error(error.message);
-      return;
+    try {
+      let query = supabase
+        .from("properties")
+        .select("id,name,address,city,county,created_at")
+        .order("created_at", { ascending: false });
+
+      // If caretaker, only show assigned properties
+      if (isCaretaker && user) {
+        console.log("Loading properties for caretaker:", user.id);
+        const { data: cpData, error: cpError } = await supabase
+          .from("caretaker_properties")
+          .select("property_id")
+          .eq("user_id", user.id);
+        
+        if (cpError) {
+          console.error("Error loading caretaker properties:", cpError);
+          toast.error("Failed to load assigned properties");
+          setItems([]);
+          return;
+        }
+
+        const propertyIds = (cpData ?? []).map((cp) => cp.property_id);
+        console.log("Assigned property IDs:", propertyIds);
+        
+        if (propertyIds.length > 0) {
+          query = query.in("id", propertyIds);
+        } else {
+          // Caretaker with no assigned properties
+          console.log("Caretaker has no assigned properties");
+          setItems([]);
+          return;
+        }
+      }
+
+      const { data, error } = await query;
+      if (error) {
+        console.error("Error loading properties:", error);
+        toast.error(error.message);
+        return;
+      }
+      console.log("Loaded properties:", data);
+      setItems(data ?? []);
+    } catch (err: any) {
+      console.error("Exception loading properties:", err);
+      toast.error("Failed to load properties");
     }
-    setItems(data ?? []);
   };
 
   return (
