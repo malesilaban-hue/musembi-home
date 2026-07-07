@@ -202,7 +202,7 @@ export default function PropertyDetail() {
         ) : (
           <div className="space-y-6">
             {["ground", "first", "second", "third", "fourth", "fifth"].map((floor) => {
-              const floorUnits = units.filter((u) => u.floor_level === floor);
+              const floorUnits = units.filter((u) => u.floor_level === floor && (filter === "all" || u.status === filter));
               if (floorUnits.length === 0) return null;
               return (
                 <div key={floor}>
