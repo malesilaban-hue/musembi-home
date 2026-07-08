@@ -815,6 +815,15 @@ export type Database = {
         Returns: boolean
       }
       generate_due_invoices: { Args: never; Returns: number }
+      generate_monthly_invoices: {
+        Args: never
+        Returns: {
+          invoice_id: string
+          invoice_number: string
+          lease_id: string
+          status: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
