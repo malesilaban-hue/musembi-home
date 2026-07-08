@@ -60,11 +60,12 @@ export default function Dashboard() {
     try {
       const result = await generateMonthlyInvoices();
       if (result.created > 0) {
-        toast.success(`Generated ${result.created} invoices`);
-      } else if (result.message) {
-        toast.info(result.message);
+        toast.success(`Generated ${result.created} invoice${result.created === 1 ? "" : "s"}`);
       } else {
-        toast.success("Invoice generation triggered");
+        toast.info("All tenants already have this month's invoice");
+      }
+      if (result.duplicatesRemoved > 0) {
+        toast.success(`Removed ${result.duplicatesRemoved} duplicate invoice${result.duplicatesRemoved === 1 ? "" : "s"}`);
       }
       // Reload stats
       if (isTenant) await loadTenantDashboard();

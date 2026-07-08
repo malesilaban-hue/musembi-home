@@ -6,22 +6,23 @@ import { supabase } from "@/integrations/supabase/client";
  */
 export async function generateMonthlyInvoices() {
   try {
-    // Try calling the function
-    const { data, error } = await supabase
-      .rpc("generate_monthly_invoices", {}, {
-        // Increase timeout and set proper headers
-        count: "estimated",
-      });
-    
-    if (error) {
-      console.error("RPC Error:", error);
-      throw new Error(error.message || "Failed to generate invoices");
-    }
-    
+    // New idempotent RPC: creates one current-month invoice per active lease,
+    // skipping any lease that already has one this month.
+    const { data: createdCount, error } = await supabase.rpc(
+      "generate_current_month_invoices" as never,
+    );
+    if (error) throw new Error(error.message || "Failed to generate invoices");
+
+    // Also remove any duplicate current-month invoices left behind by prior runs.
+    const { data: removedCount } = await supabase.rpc(
+      "dedupe_current_month_invoices" as never,
+    );
+
     return {
       success: true,
-      created: data?.length ?? 0,
-      invoices: data ?? [],
+      created: Number(createdCount ?? 0),
+      duplicatesRemoved: Number(removedCount ?? 0),
+      message: "" as string,
     };
   } catch (err) {
     console.error("Invoice generation failed:", err);

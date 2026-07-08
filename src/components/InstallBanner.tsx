@@ -93,6 +93,10 @@ export function InstallBanner() {
             <p className="text-xs opacity-90">
               Tap <b>Share</b> → <b>Add to Home Screen</b> → <b>Add</b>.
             </p>
+          ) : isAndroid && !deferred ? (
+            <p className="text-xs opacity-90">
+              Open browser menu (⋮) → <b>Install app</b> / <b>Add to Home screen</b>.
+            </p>
           ) : (
             <p className="text-xs opacity-90">Add the app to your home screen for quick access.</p>
           )}
