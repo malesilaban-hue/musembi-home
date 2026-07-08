@@ -1,6 +1,10 @@
 -- Automatic Invoice Generation System
 -- Generates invoices for active leases with due date set to app_settings.default_due_day
 
+-- Drop old functions if they exist
+DROP FUNCTION IF EXISTS public.generate_due_invoices() CASCADE;
+DROP FUNCTION IF EXISTS public.generate_monthly_invoices() CASCADE;
+
 -- Create function to generate monthly invoices for active leases
 CREATE OR REPLACE FUNCTION public.generate_monthly_invoices()
 RETURNS TABLE(invoice_id uuid, lease_id uuid, invoice_number text, status text) AS $$
@@ -55,11 +59,10 @@ BEGIN
       v_month_end := DATE_TRUNC('month', v_month_start + INTERVAL '1 month')::date - INTERVAL '1 day';
       
       -- Set due date to default_due_day of the month after billing period ends
-      -- For example: if period ends on Jan 31, due date is Feb 5
       v_due_date := DATE_TRUNC('month', v_month_end + INTERVAL '1 month')::date + 
                     (v_default_due_day - 1) * INTERVAL '1 day';
       
-      -- Calculate totals
+      -- Calculate totals (do NOT set balance - it's auto-calculated)
       v_subtotal := v_lease.monthly_rent + v_lease.water_charge + v_lease.garbage_charge + 
                     v_lease.parking_charge + v_lease.service_charge;
       v_total := v_subtotal;
@@ -75,7 +78,7 @@ BEGIN
           AND period_start = v_month_start 
           AND period_end = v_month_end
       ) THEN
-        -- Insert invoice
+        -- Insert invoice (do NOT set balance or amount_paid - they have defaults)
         INSERT INTO public.invoices (
           invoice_number,
           lease_id,
@@ -116,23 +119,13 @@ $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path=public;
 GRANT EXECUTE ON FUNCTION public.generate_monthly_invoices() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.generate_monthly_invoices() TO service_role;
 
--- Create index to improve invoice lookup performance
+-- Create indexes to improve performance
 CREATE INDEX IF NOT EXISTS idx_invoices_lease_period 
   ON public.invoices(lease_id, period_start, period_end);
 
--- Create index for unpaid invoices
 CREATE INDEX IF NOT EXISTS idx_invoices_unpaid 
   ON public.invoices(status, due_date) 
   WHERE status = 'unpaid';
 
--- Create index for payment lookups
 CREATE INDEX IF NOT EXISTS idx_payments_tenant 
   ON public.payments(tenant_id, created_at);
-
--- Note: To run this daily, you'll need to either:
--- 1. Use a backend service with a cron job to call: SELECT public.generate_monthly_invoices()
--- 2. Or manually trigger it from your application on the first of each month
--- 3. Or set up a pg_cron extension if your Supabase plan supports it
-
--- For now, you can manually run this query daily/weekly from your app:
--- SELECT public.generate_monthly_invoices();

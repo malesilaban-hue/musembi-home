@@ -2,10 +2,11 @@
 -- This sets up the invoice generation function
 -- Go to: https://supabase.com → Your Project → SQL Editor → New Query → Paste this
 
--- First check if invoices table exists
--- If you get error "does not exist", you need to run all migrations in supabase/migrations/ folder first
+-- Drop old functions if they exist to avoid conflicts
+DROP FUNCTION IF EXISTS public.generate_due_invoices() CASCADE;
+DROP FUNCTION IF EXISTS public.generate_monthly_invoices() CASCADE;
 
--- Create or replace the invoice generation function
+-- Create the invoice generation function
 CREATE OR REPLACE FUNCTION public.generate_monthly_invoices()
 RETURNS TABLE(invoice_id uuid, lease_id uuid, invoice_number text, status text) AS $$
 DECLARE
@@ -59,11 +60,10 @@ BEGIN
       v_month_end := DATE_TRUNC('month', v_month_start + INTERVAL '1 month')::date - INTERVAL '1 day';
       
       -- Set due date to default_due_day of the month after billing period ends
-      -- For example: if period ends on Jan 31, due date is Feb 5
       v_due_date := DATE_TRUNC('month', v_month_end + INTERVAL '1 month')::date + 
                     (v_default_due_day - 1) * INTERVAL '1 day';
       
-      -- Calculate totals
+      -- Calculate totals (do NOT set balance - it's auto-calculated as total - amount_paid)
       v_subtotal := v_lease.monthly_rent + v_lease.water_charge + v_lease.garbage_charge + 
                     v_lease.parking_charge + v_lease.service_charge;
       v_total := v_subtotal;
@@ -79,7 +79,7 @@ BEGIN
           AND period_start = v_month_start 
           AND period_end = v_month_end
       ) THEN
-        -- Insert invoice
+        -- Insert invoice - only set the columns we need (balance and amount_paid have defaults)
         INSERT INTO public.invoices (
           invoice_number,
           lease_id,
