@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Download, X } from "lucide-react";
+import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -11,10 +11,10 @@ import { Button } from "@/components/ui/button";
  */
 export function InstallBanner() {
   const [deferred, setDeferred] = useState<any>(null);
-  const [dismissed, setDismissed] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
 
   useEffect(() => {
     const standalone =
@@ -38,16 +38,10 @@ export function InstallBanner() {
     const onInstalled = () => {
       setInstalled(true);
       setDeferred(null);
-      try { sessionStorage.removeItem("install_banner_hidden"); } catch {}
     };
 
     window.addEventListener("beforeinstallprompt", onBIP);
     window.addEventListener("appinstalled", onInstalled);
-
-    // Session-only hide (not persistent) so banner keeps insisting on next visit
-    try {
-      if (sessionStorage.getItem("install_banner_hidden") === "1") setDismissed(true);
-    } catch {}
 
     return () => {
       window.removeEventListener("beforeinstallprompt", onBIP);
@@ -56,7 +50,10 @@ export function InstallBanner() {
   }, []);
 
   const install = async () => {
-    if (!deferred) return;
+    if (!deferred) {
+      setShowSteps(true);
+      return;
+    }
     try {
       await deferred.prompt();
       const { outcome } = await deferred.userChoice;
@@ -69,12 +66,7 @@ export function InstallBanner() {
     }
   };
 
-  const hideForSession = () => {
-    try { sessionStorage.setItem("install_banner_hidden", "1"); } catch {}
-    setDismissed(true);
-  };
-
-  if (installed || dismissed) return null;
+  if (installed) return null;
 
   // Show on mobile and on desktop Chromium (when a native prompt is available).
   // On other desktop browsers we hide it — they don't support install anyway.
@@ -89,36 +81,29 @@ export function InstallBanner() {
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">Install MUSEMBI PMS</p>
-          {isIOS && !deferred ? (
+          {showSteps && isIOS ? (
             <p className="text-xs opacity-90">
               Tap <b>Share</b> → <b>Add to Home Screen</b> → <b>Add</b>.
             </p>
-          ) : isAndroid && !deferred ? (
+          ) : showSteps && isAndroid ? (
             <p className="text-xs opacity-90">
               Open browser menu (⋮) → <b>Install app</b> / <b>Add to Home screen</b>.
             </p>
+          ) : isAndroid && !deferred ? (
+            <p className="text-xs opacity-90">Tap Install. If your browser blocks the prompt, the app must be opened on HTTPS outside the Lovable editor.</p>
+          ) : isIOS && !deferred ? (
+            <p className="text-xs opacity-90">Tap Install to see the Add to Home Screen steps.</p>
           ) : (
             <p className="text-xs opacity-90">Add the app to your home screen for quick access.</p>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {deferred && (
-            <Button
-              size="sm"
-              onClick={install}
-              className="h-8 bg-white px-3 text-xs font-semibold text-primary hover:bg-white/90"
-            >
-              Install
-            </Button>
-          )}
           <Button
             size="sm"
-            variant="ghost"
-            onClick={hideForSession}
-            className="h-8 w-8 p-0 text-primary-foreground hover:bg-white/20"
-            aria-label="Hide for this session"
+            onClick={install}
+            className="h-8 bg-white px-3 text-xs font-semibold text-primary hover:bg-white/90"
           >
-            <X className="h-4 w-4" />
+            Install
           </Button>
         </div>
       </div>
