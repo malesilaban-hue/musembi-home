@@ -809,6 +809,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      allocate_payment: { Args: { _payment_id: string }; Returns: undefined }
       can_access_property: { Args: { _pid: string }; Returns: boolean }
       current_user_has_any_role: {
         Args: { _roles: Database["public"]["Enums"]["app_role"][] }
