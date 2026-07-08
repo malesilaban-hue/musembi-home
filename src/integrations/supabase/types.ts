@@ -814,6 +814,8 @@ export type Database = {
         Args: { _roles: Database["public"]["Enums"]["app_role"][] }
         Returns: boolean
       }
+      dedupe_current_month_invoices: { Args: never; Returns: number }
+      generate_current_month_invoices: { Args: never; Returns: number }
       generate_due_invoices: { Args: never; Returns: number }
       generate_monthly_invoices: {
         Args: never
