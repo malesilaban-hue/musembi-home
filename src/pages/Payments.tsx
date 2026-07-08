@@ -50,6 +50,12 @@ interface Tenant {
   full_name: string;
 }
 
+interface Unit {
+  id: string;
+  house_number: string;
+  properties: { name: string } | null;
+}
+
 const paymentSchema = z.object({
   tenant_id: z.string().min(1, "Tenant required"),
   amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
@@ -226,8 +232,11 @@ export default function Payments() {
 
 function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
   const [tenants, setTenants] = useState<Tenant[] | null>(null);
+  const [units, setUnits] = useState<Unit[]>([]);
   const [tenantSearch, setTenantSearch] = useState("");
+  const [unitSearch, setUnitSearch] = useState("");
   const [showTenantList, setShowTenantList] = useState(false);
+  const [showUnitList, setShowUnitList] = useState(false);
   const {
     register,
     handleSubmit,
@@ -242,18 +251,27 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
   const selectedTenantId = watch("tenant_id");
 
   useEffect(() => {
-    const loadTenants = async () => {
-      const { data, error } = await supabase
-        .from("tenants")
-        .select("id,full_name")
-        .order("full_name");
-      if (!error) setTenants(data ?? []);
+    const loadData = async () => {
+      const [tenantsRes, unitsRes] = await Promise.all([
+        supabase.from("tenants").select("id,full_name").order("full_name"),
+        supabase
+          .from("units")
+          .select("id,house_number,properties(name)")
+          .in("status", ["occupied", "vacant"])
+          .order("house_number"),
+      ]);
+      if (!tenantsRes.error) setTenants(tenantsRes.data ?? []);
+      if (!unitsRes.error) setUnits(unitsRes.data ?? []);
     };
-    void loadTenants();
+    void loadData();
   }, []);
 
   const filteredTenants = (tenants ?? []).filter((t) =>
     t.full_name.toLowerCase().includes(tenantSearch.toLowerCase())
+  );
+
+  const filteredUnits = units.filter((u) =>
+    u.house_number.toLowerCase().includes(unitSearch.toLowerCase())
   );
 
   const onSubmit = async (values: PaymentFormValues) => {
@@ -292,6 +310,22 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
     setShowTenantList(false);
   };
 
+  const handleUnitSelect = async (unitId: string, unitName: string) => {
+    // Get the tenant associated with this unit (via active lease)
+    const { data: leaseData } = await supabase
+      .from("leases")
+      .select("tenant_id,tenants(full_name)")
+      .eq("unit_id", unitId)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (leaseData?.tenant_id) {
+      handleTenantSelect(leaseData.tenant_id, leaseData.tenants?.full_name || unitName);
+    }
+    setUnitSearch(unitName);
+    setShowUnitList(false);
+  };
+
   return (
     <DialogContent className="max-h-[90vh] overflow-y-auto">
       <form onSubmit={handleSubmit(onSubmit)}>
@@ -303,35 +337,72 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="tenant" className="text-xs">
-              Tenant
-            </Label>
-            <div className="relative">
-              <Input
-                id="tenant"
-                placeholder="Search tenant…"
-                value={tenantSearch}
-                onChange={(e) => {
-                  setTenantSearch(e.target.value);
-                  setShowTenantList(true);
-                }}
-                onFocus={() => setShowTenantList(true)}
-                className="mb-2"
-              />
-              {showTenantList && tenantSearch && filteredTenants.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-10 space-y-1 rounded-md border border-input bg-popover p-2 shadow-md">
-                  {filteredTenants.slice(0, 5).map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => handleTenantSelect(t.id, t.full_name)}
-                      className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-                    >
-                      {t.full_name}
-                    </button>
-                  ))}
-                </div>
-              )}
+            <Label className="text-xs">Search by tenant or unit</Label>
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+              {/* Tenant Search */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="tenant" className="text-xs">
+                  Tenant name
+                </Label>
+                <Input
+                  id="tenant"
+                  placeholder="Search tenant…"
+                  value={tenantSearch}
+                  onChange={(e) => {
+                    setTenantSearch(e.target.value);
+                    setShowTenantList(true);
+                  }}
+                  onFocus={() => setShowTenantList(true)}
+                />
+                {showTenantList && tenantSearch && filteredTenants.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 space-y-1 rounded-md border border-input bg-popover p-2 shadow-md">
+                    {filteredTenants.slice(0, 5).map((t) => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => handleTenantSelect(t.id, t.full_name)}
+                        className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                      >
+                        {t.full_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Unit Search */}
+              <div className="space-y-1.5 relative">
+                <Label htmlFor="unit" className="text-xs">
+                  Unit number
+                </Label>
+                <Input
+                  id="unit"
+                  placeholder="Search unit (e.g., A-01)…"
+                  value={unitSearch}
+                  onChange={(e) => {
+                    setUnitSearch(e.target.value);
+                    setShowUnitList(true);
+                  }}
+                  onFocus={() => setShowUnitList(true)}
+                />
+                {showUnitList && unitSearch && filteredUnits.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-10 space-y-1 rounded-md border border-input bg-popover p-2 shadow-md">
+                    {filteredUnits.slice(0, 5).map((u) => (
+                      <button
+                        key={u.id}
+                        type="button"
+                        onClick={() => handleUnitSelect(u.id, u.house_number)}
+                        className="block w-full rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+                      >
+                        <div className="font-medium">{u.house_number}</div>
+                        {u.properties?.name && (
+                          <div className="text-xs text-muted-foreground">{u.properties.name}</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             {selectedTenantId && (
               <p className="text-xs text-muted-foreground">

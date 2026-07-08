@@ -209,22 +209,29 @@ export function FloatingChat() {
     if (error) setBody(text);
   };
 
-  const handleDragStart = (e: React.MouseEvent<HTMLButtonElement | HTMLDivElement>) => {
+  const handleDragStart = (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
     if (open) return; // Don't drag when chat is open
     setIsDragging(true);
     const element = e.currentTarget as HTMLElement;
     const rect = element.getBoundingClientRect();
+    
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+    
     setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
+      x: clientX - rect.left,
+      y: clientY - rect.top,
     });
   };
 
-  const handleDragMove = (e: MouseEvent) => {
+  const handleDragMove = (e: MouseEvent | TouchEvent) => {
     if (!isDragging || open) return;
     
-    const newX = e.clientX - dragOffset.x;
-    const newY = window.innerHeight - e.clientY - dragOffset.y; // For bottom positioning
+    const clientX = 'touches' in e ? e.touches[0].clientX : (e as MouseEvent).clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : (e as MouseEvent).clientY;
+    
+    const newX = clientX - dragOffset.x;
+    const newY = window.innerHeight - clientY - dragOffset.y; // For bottom positioning
     
     // Keep within viewport bounds
     const maxX = window.innerWidth - 56; // Button width
@@ -242,13 +249,17 @@ export function FloatingChat() {
 
   useEffect(() => {
     if (isDragging && !open) {
-      const handleMove = (e: MouseEvent) => handleDragMove(e);
+      const handleMove = (e: MouseEvent | TouchEvent) => handleDragMove(e);
       const handleEnd = () => handleDragEnd();
       document.addEventListener("mousemove", handleMove);
+      document.addEventListener("touchmove", handleMove);
       document.addEventListener("mouseup", handleEnd);
+      document.addEventListener("touchend", handleEnd);
       return () => {
         document.removeEventListener("mousemove", handleMove);
+        document.removeEventListener("touchmove", handleMove);
         document.removeEventListener("mouseup", handleEnd);
+        document.removeEventListener("touchend", handleEnd);
       };
     }
   }, [isDragging, dragOffset, open]);
@@ -261,7 +272,8 @@ export function FloatingChat() {
         <button
           onClick={() => setOpen(true)}
           onMouseDown={handleDragStart}
-          className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform hover:scale-105 cursor-grab active:cursor-grabbing"
+          onTouchStart={handleDragStart}
+          className="fixed z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-2xl transition-transform hover:scale-105 cursor-grab active:cursor-grabbing touch-none"
           style={{
             left: `${position.x}px`,
             bottom: `${position.y}px`,
