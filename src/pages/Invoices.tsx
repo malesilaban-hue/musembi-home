@@ -47,20 +47,23 @@ export default function Invoices() {
 
   const generateNow = async () => {
     setGenerating(true);
-    const { data, error } = await supabase.rpc("generate_due_invoices" as never);
+    const { data: created, error } = await supabase.rpc("generate_current_month_invoices" as never);
+    const { data: removed } = await supabase.rpc("dedupe_current_month_invoices" as never);
     setGenerating(false);
     if (error) return toast.error(error.message);
-    const n = Number(data ?? 0);
-    if (n > 0) toast.success(`Generated ${n} invoice${n === 1 ? "" : "s"}`);
-    else toast.info("No new invoices to generate yet");
+    const n = Number(created ?? 0);
+    const d = Number(removed ?? 0);
+    if (n > 0) toast.success(`Generated ${n} invoice${n === 1 ? "" : "s"} for this month`);
+    else toast.info("All tenants already have this month's invoice");
+    if (d > 0) toast.success(`Removed ${d} duplicate invoice${d === 1 ? "" : "s"}`);
     void reload();
   };
 
   useEffect(() => {
     document.title = "Invoices · MUSEMBI PMS";
     void reload();
-    // Auto-attempt monthly generation on load (idempotent — skips if already created)
-    void supabase.rpc("generate_due_invoices" as never).then(() => reload());
+    // Idempotent auto-dedupe on load (does not create new invoices automatically)
+    void supabase.rpc("dedupe_current_month_invoices" as never).then(() => reload());
     const ch = supabase
       .channel("invoices-live")
       .on("postgres_changes", { event: "*", schema: "public", table: "invoices" }, () => void reload())
