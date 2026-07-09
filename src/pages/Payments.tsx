@@ -80,7 +80,7 @@ export default function Payments() {
   const reload = async () => {
     const { data: paymentsData, error: paymentsError } = await supabase
       .from("payments")
-      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
+      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
       .order("paid_at", { ascending: false });
 
     if (paymentsError) return toast.error(paymentsError.message);
@@ -90,29 +90,39 @@ export default function Payments() {
       return;
     }
 
-    const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id))];
+    const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id).filter(Boolean) as string[])];
     const leaseIds = [...new Set(paymentsData.map((p) => p.lease_id).filter(Boolean) as string[])];
+    const unitIds = [...new Set(paymentsData.map((p) => (p as any).unit_id).filter(Boolean) as string[])];
 
-    const [tenantsRes, leasesRes] = await Promise.all([
-      supabase.from("tenants").select("id,full_name").in("id", tenantIds),
+    const [tenantsRes, leasesRes, unitsRes] = await Promise.all([
+      tenantIds.length
+        ? supabase.from("tenants").select("id,full_name").in("id", tenantIds)
+        : Promise.resolve({ data: [] as any[] }),
       leaseIds.length
         ? supabase
             .from("leases")
             .select("id,units(house_number,properties(name))")
             .in("id", leaseIds)
         : Promise.resolve({ data: [] as unknown[] }),
+      unitIds.length
+        ? supabase.from("units").select("id,house_number,properties(name)").in("id", unitIds)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
 
-    const tenantMap = new Map((tenantsRes.data ?? []).map((t) => [t.id, t]));
+    const tenantMap = new Map((tenantsRes.data ?? []).map((t: any) => [t.id, t]));
     const leaseMap = new Map(
       ((leasesRes.data ?? []) as Array<{
         id: string;
         units: { house_number: string; properties: { name: string } | null } | null;
       }>).map((l) => [l.id, l]),
     );
+    const unitMap = new Map(
+      ((unitsRes.data ?? []) as any[]).map((u) => [u.id, u]),
+    );
 
-    const formatted: Row[] = paymentsData.map((p) => {
+    const formatted: Row[] = paymentsData.map((p: any) => {
       const lease = p.lease_id ? leaseMap.get(p.lease_id) : null;
+      const unit = p.unit_id ? unitMap.get(p.unit_id) : null;
       return {
         id: p.id,
         receipt_number: p.receipt_number,
@@ -123,9 +133,10 @@ export default function Payments() {
         paid_at: p.paid_at,
         tenant_id: p.tenant_id,
         lease_id: p.lease_id,
-        tenants: tenantMap.get(p.tenant_id) ?? null,
-        unit_label: lease?.units?.house_number ?? null,
-        property_name: lease?.units?.properties?.name ?? null,
+        unit_id: p.unit_id ?? null,
+        tenants: p.tenant_id ? (tenantMap.get(p.tenant_id) ?? null) : null,
+        unit_label: lease?.units?.house_number ?? unit?.house_number ?? null,
+        property_name: lease?.units?.properties?.name ?? unit?.properties?.name ?? null,
       };
     });
 
