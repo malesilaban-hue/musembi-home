@@ -29,20 +29,67 @@ interface Row {
 }
 
 export default function Invoices() {
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const canGenerate = hasRole(["super_admin", "landlord", "accountant"]);
+  const isCaretaker = hasRole(["caretaker"]);
   const [items, setItems] = useState<Row[] | null>(null);
   const [q, setQ] = useState("");
   const [status, setStatus] = useState<string>("all");
   const [generating, setGenerating] = useState(false);
 
   const reload = async () => {
-    const { data, error } = await supabase
-      .from("invoices")
-      .select("id,invoice_number,period_start,period_end,due_date,total,balance,status,leases(tenants(full_name),units(house_number,properties(name)))")
-      .order("created_at", { ascending: false });
-    if (error) return toast.error(error.message);
-    setItems((data as unknown as Row[]) ?? []);
+    try {
+      let query = supabase
+        .from("invoices")
+        .select("id,invoice_number,period_start,period_end,due_date,total,balance,status,leases(tenants(full_name),units(house_number,properties(name)))");
+
+      // For caretakers, filter by assigned properties
+      if (isCaretaker && user) {
+        // Get assigned properties
+        const { data: caretakerProps } = await supabase
+          .from("caretaker_properties")
+          .select("property_id")
+          .eq("user_id", user.id);
+        
+        const propertyIds = (caretakerProps ?? []).map(cp => cp.property_id);
+        
+        if (propertyIds.length === 0) {
+          // Caretaker has no assigned properties
+          setItems([]);
+          return;
+        }
+
+        // Get unit IDs for those properties
+        const { data: units } = await supabase
+          .from("units")
+          .select("id")
+          .in("property_id", propertyIds);
+        
+        const unitIds = (units ?? []).map(u => u.id);
+        
+        if (unitIds.length > 0) {
+          // Filter invoices by leases on those units
+          const { data, error } = await supabase
+            .from("invoices")
+            .select("id,invoice_number,period_start,period_end,due_date,total,balance,status,leases(tenants(full_name),units(house_number,properties(name)))")
+            .in("leases.unit_id", unitIds)
+            .order("created_at", { ascending: false });
+          
+          if (error) return toast.error(error.message);
+          setItems((data as unknown as Row[]) ?? []);
+        } else {
+          setItems([]);
+        }
+        return;
+      }
+
+      // For admin/staff, show all invoices
+      const { data, error } = await query.order("created_at", { ascending: false });
+      if (error) return toast.error(error.message);
+      setItems((data as unknown as Row[]) ?? []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load invoices");
+    }
   };
 
   const generateNow = async () => {
