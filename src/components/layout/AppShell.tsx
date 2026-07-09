@@ -5,6 +5,7 @@ import { BottomNav } from "./BottomNav";
 import { TopBar } from "./TopBar";
 import { InstallBanner } from "@/components/InstallBanner";
 import { FloatingChat } from "@/components/FloatingChat";
+import { useCaretakerTheme } from "@/lib/use-caretaker-theme";
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
