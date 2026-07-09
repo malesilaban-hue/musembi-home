@@ -38,8 +38,9 @@ interface Row {
   reference: string | null;
   reason: string | null;
   paid_at: string;
-  tenant_id: string;
+  tenant_id: string | null;
   lease_id: string | null;
+  unit_id: string | null;
   tenants: { id: string; full_name: string } | null;
   unit_label: string | null;
   property_name: string | null;
@@ -57,14 +58,15 @@ interface Unit {
 }
 
 const paymentSchema = z.object({
-  tenant_id: z.string().min(1, "Tenant or unit required"),
+  tenant_id: z.string().optional().or(z.literal("")),
+  unit_id: z.string().optional().or(z.literal("")),
   amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
   reference: z.string().trim().max(100).optional().or(z.literal("")),
   method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
   paid_at: z.string().min(1, "Date required"),
   reason: z.string().trim().max(255).optional().or(z.literal("")),
-}).refine((data) => data.tenant_id, {
-  message: "Please select a tenant or search by unit number",
+}).refine((data) => !!data.tenant_id || !!data.unit_id, {
+  message: "Select a tenant or a unit",
   path: ["tenant_id"],
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
@@ -79,7 +81,7 @@ export default function Payments() {
   const reload = async () => {
     const { data: paymentsData, error: paymentsError } = await supabase
       .from("payments")
-      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
+      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
       .order("paid_at", { ascending: false });
 
     if (paymentsError) return toast.error(paymentsError.message);
@@ -89,29 +91,39 @@ export default function Payments() {
       return;
     }
 
-    const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id))];
+    const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id).filter(Boolean) as string[])];
     const leaseIds = [...new Set(paymentsData.map((p) => p.lease_id).filter(Boolean) as string[])];
+    const unitIds = [...new Set(paymentsData.map((p) => (p as any).unit_id).filter(Boolean) as string[])];
 
-    const [tenantsRes, leasesRes] = await Promise.all([
-      supabase.from("tenants").select("id,full_name").in("id", tenantIds),
+    const [tenantsRes, leasesRes, unitsRes] = await Promise.all([
+      tenantIds.length
+        ? supabase.from("tenants").select("id,full_name").in("id", tenantIds)
+        : Promise.resolve({ data: [] as any[] }),
       leaseIds.length
         ? supabase
             .from("leases")
             .select("id,units(house_number,properties(name))")
             .in("id", leaseIds)
         : Promise.resolve({ data: [] as unknown[] }),
+      unitIds.length
+        ? supabase.from("units").select("id,house_number,properties(name)").in("id", unitIds)
+        : Promise.resolve({ data: [] as any[] }),
     ]);
 
-    const tenantMap = new Map((tenantsRes.data ?? []).map((t) => [t.id, t]));
+    const tenantMap = new Map((tenantsRes.data ?? []).map((t: any) => [t.id, t]));
     const leaseMap = new Map(
       ((leasesRes.data ?? []) as Array<{
         id: string;
         units: { house_number: string; properties: { name: string } | null } | null;
       }>).map((l) => [l.id, l]),
     );
+    const unitMap = new Map(
+      ((unitsRes.data ?? []) as any[]).map((u) => [u.id, u]),
+    );
 
-    const formatted: Row[] = paymentsData.map((p) => {
+    const formatted: Row[] = paymentsData.map((p: any) => {
       const lease = p.lease_id ? leaseMap.get(p.lease_id) : null;
+      const unit = p.unit_id ? unitMap.get(p.unit_id) : null;
       return {
         id: p.id,
         receipt_number: p.receipt_number,
@@ -122,9 +134,10 @@ export default function Payments() {
         paid_at: p.paid_at,
         tenant_id: p.tenant_id,
         lease_id: p.lease_id,
-        tenants: tenantMap.get(p.tenant_id) ?? null,
-        unit_label: lease?.units?.house_number ?? null,
-        property_name: lease?.units?.properties?.name ?? null,
+        unit_id: p.unit_id ?? null,
+        tenants: p.tenant_id ? (tenantMap.get(p.tenant_id) ?? null) : null,
+        unit_label: lease?.units?.house_number ?? unit?.house_number ?? null,
+        property_name: lease?.units?.properties?.name ?? unit?.properties?.name ?? null,
       };
     });
 
@@ -279,13 +292,32 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
 
   const onSubmit = async (values: PaymentFormValues) => {
     try {
-      // Generate receipt number
       const now = new Date();
       const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
 
+      // Prefer explicit unit selection; look up lease if any
+      let leaseId: string | null = null;
+      let tenantId: string | null = values.tenant_id || null;
+      const unitId: string | null = values.unit_id || null;
+
+      if (unitId) {
+        const { data: leaseData } = await supabase
+          .from("leases")
+          .select("id,tenant_id")
+          .eq("unit_id", unitId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (leaseData) {
+          leaseId = leaseData.id;
+          if (!tenantId) tenantId = leaseData.tenant_id;
+        }
+      }
+
       const payload: Record<string, unknown> = {
         receipt_number: receipt,
-        tenant_id: values.tenant_id,
+        tenant_id: tenantId,
+        unit_id: unitId,
+        lease_id: leaseId,
         amount: values.amount,
         method: values.method,
         reference: values.reference || null,
@@ -314,19 +346,19 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
   };
 
   const handleUnitSelect = async (unitId: string, unitName: string) => {
-    // Get the tenant associated with this unit (via active lease)
+    setValue("unit_id", unitId);
+    setUnitSearch(unitName);
+    setShowUnitList(false);
+    // Autofill tenant if the unit has an active lease (doesn't require it)
     const { data: leaseData } = await supabase
       .from("leases")
       .select("tenant_id,tenants(full_name)")
       .eq("unit_id", unitId)
       .eq("status", "active")
       .maybeSingle();
-
     if (leaseData?.tenant_id) {
-      handleTenantSelect(leaseData.tenant_id, leaseData.tenants?.full_name || unitName);
+      handleTenantSelect(leaseData.tenant_id, (leaseData as any).tenants?.full_name || unitName);
     }
-    setUnitSearch(unitName);
-    setShowUnitList(false);
   };
 
   return (
@@ -407,10 +439,13 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
                 )}
               </div>
             </div>
-            {selectedTenantId && (
+            {(selectedTenantId || watch("unit_id")) && (
               <div className="rounded-lg bg-muted p-2">
                 <p className="text-xs font-medium text-foreground">
-                  ✓ Selected: {tenants?.find((t) => t.id === selectedTenantId)?.full_name}
+                  ✓ Selected:{" "}
+                  {selectedTenantId
+                    ? tenants?.find((t) => t.id === selectedTenantId)?.full_name
+                    : `Unit ${units.find((u) => u.id === watch("unit_id"))?.house_number ?? ""}`}
                 </p>
               </div>
             )}

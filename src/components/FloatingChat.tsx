@@ -209,7 +209,7 @@ export function FloatingChat() {
     if (error) setBody(text);
   };
 
-  const handleDragStart = (e: React.MouseEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>) => {
+  const handleDragStart = (e: React.MouseEvent<HTMLElement> | React.TouchEvent<HTMLElement>) => {
     if (open) return; // Don't drag when chat is open
     setIsDragging(true);
     const element = e.currentTarget as HTMLElement;

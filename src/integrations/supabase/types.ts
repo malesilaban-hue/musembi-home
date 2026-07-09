@@ -224,13 +224,14 @@ export type Database = {
           due_date: string
           id: string
           invoice_number: string
-          lease_id: string
+          lease_id: string | null
           notes: string | null
           period_end: string
           period_start: string
           status: Database["public"]["Enums"]["invoice_status"]
           subtotal: number
           total: number
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -241,13 +242,14 @@ export type Database = {
           due_date: string
           id?: string
           invoice_number: string
-          lease_id: string
+          lease_id?: string | null
           notes?: string | null
           period_end: string
           period_start: string
           status?: Database["public"]["Enums"]["invoice_status"]
           subtotal?: number
           total?: number
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -258,13 +260,14 @@ export type Database = {
           due_date?: string
           id?: string
           invoice_number?: string
-          lease_id?: string
+          lease_id?: string | null
           notes?: string | null
           period_end?: string
           period_start?: string
           status?: Database["public"]["Enums"]["invoice_status"]
           subtotal?: number
           total?: number
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -273,6 +276,13 @@ export type Database = {
             columns: ["lease_id"]
             isOneToOne: false
             referencedRelation: "leases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
@@ -479,7 +489,8 @@ export type Database = {
           receipt_number: string
           recorded_by: string | null
           reference: string | null
-          tenant_id: string
+          tenant_id: string | null
+          unit_id: string | null
           updated_at: string
         }
         Insert: {
@@ -494,7 +505,8 @@ export type Database = {
           receipt_number: string
           recorded_by?: string | null
           reference?: string | null
-          tenant_id: string
+          tenant_id?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -509,7 +521,8 @@ export type Database = {
           receipt_number?: string
           recorded_by?: string | null
           reference?: string | null
-          tenant_id?: string
+          tenant_id?: string | null
+          unit_id?: string | null
           updated_at?: string
         }
         Relationships: [
@@ -525,6 +538,13 @@ export type Database = {
             columns: ["tenant_id"]
             isOneToOne: false
             referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "payments_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "units"
             referencedColumns: ["id"]
           },
         ]
