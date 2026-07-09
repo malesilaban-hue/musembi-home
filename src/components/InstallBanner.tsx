@@ -1,17 +1,19 @@
 import { useEffect, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+const DISMISS_KEY = "musembi_install_dismissed_until";
+
 /**
- * Persistent install banner.
- * - Shows on every visit until the app is actually installed (standalone mode).
- * - "Later" (X) hides for the current session only; returns on next page load.
- * - Android/Chromium: triggers the native install prompt via beforeinstallprompt.
- * - iOS Safari: shows Add-to-Home-Screen instructions (no native prompt exists).
+ * Install banner with a dismiss (X) button.
+ * - Dismissal is remembered for 7 days (per browser) so the banner doesn't nag.
+ * - Reappears automatically after 7 days or when the app is uninstalled.
+ * - Native prompt on Android/Chromium; manual steps on iOS Safari.
  */
 export function InstallBanner() {
   const [deferred, setDeferred] = useState<any>(null);
   const [installed, setInstalled] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [isAndroid, setIsAndroid] = useState(false);
   const [showSteps, setShowSteps] = useState(false);
@@ -25,11 +27,16 @@ export function InstallBanner() {
       return;
     }
 
+    try {
+      const until = Number(localStorage.getItem(DISMISS_KEY) || "0");
+      if (until && Date.now() < until) setDismissed(true);
+    } catch {
+      /* ignore */
+    }
+
     const ua = navigator.userAgent || "";
-    const iOSDevice = /iPad|iPhone|iPod/.test(ua) && !("MSStream" in window);
-    const androidDevice = /Android/i.test(ua);
-    setIsIOS(iOSDevice);
-    setIsAndroid(androidDevice);
+    setIsIOS(/iPad|iPhone|iPod/.test(ua) && !("MSStream" in window));
+    setIsAndroid(/Android/i.test(ua));
 
     const onBIP = (e: Event) => {
       e.preventDefault();
@@ -39,10 +46,8 @@ export function InstallBanner() {
       setInstalled(true);
       setDeferred(null);
     };
-
     window.addEventListener("beforeinstallprompt", onBIP);
     window.addEventListener("appinstalled", onInstalled);
-
     return () => {
       window.removeEventListener("beforeinstallprompt", onBIP);
       window.removeEventListener("appinstalled", onInstalled);
@@ -57,19 +62,24 @@ export function InstallBanner() {
     try {
       await deferred.prompt();
       const { outcome } = await deferred.userChoice;
-      if (outcome === "accepted") {
-        setInstalled(true);
-      }
+      if (outcome === "accepted") setInstalled(true);
       setDeferred(null);
     } catch {
       /* ignore */
     }
   };
 
-  if (installed) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(DISMISS_KEY, String(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    } catch {
+      /* ignore */
+    }
+    setDismissed(true);
+  };
 
-  // Show on mobile and on desktop Chromium (when a native prompt is available).
-  // On other desktop browsers we hide it — they don't support install anyway.
+  if (installed || dismissed) return null;
+
   const showable = isIOS || isAndroid || !!deferred;
   if (!showable) return null;
 
@@ -90,9 +100,9 @@ export function InstallBanner() {
               Open browser menu (⋮) → <b>Install app</b> / <b>Add to Home screen</b>.
             </p>
           ) : isAndroid && !deferred ? (
-            <p className="text-xs opacity-90">Tap Install. If your browser blocks the prompt, the app must be opened on HTTPS outside the Lovable editor.</p>
+            <p className="text-xs opacity-90">Tap Install for steps. Requires HTTPS and Chrome / Edge / Samsung Internet.</p>
           ) : isIOS && !deferred ? (
-            <p className="text-xs opacity-90">Tap Install to see the Add to Home Screen steps.</p>
+            <p className="text-xs opacity-90">Tap Install to see Add-to-Home-Screen steps.</p>
           ) : (
             <p className="text-xs opacity-90">Add the app to your home screen for quick access.</p>
           )}
@@ -105,6 +115,14 @@ export function InstallBanner() {
           >
             Install
           </Button>
+          <button
+            type="button"
+            onClick={dismiss}
+            aria-label="Dismiss"
+            className="rounded-md p-1.5 text-primary-foreground/90 hover:bg-white/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       </div>
     </div>
