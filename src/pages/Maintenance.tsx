@@ -78,10 +78,12 @@ const priorityColor: Record<string, string> = {
 export default function Maintenance() {
   const { hasRole, user } = useAuth();
   const canCreate = hasRole(["super_admin", "landlord", "accountant", "caretaker"]);
+  const canReadFull = hasRole(["super_admin", "landlord"]);
   const [items, setItems] = useState<Maintenance[] | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<string>("all");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const reload = async () => {
     let query = supabase
@@ -215,7 +217,35 @@ export default function Maintenance() {
                       </Badge>
                     </div>
                     {m.description && (
-                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{m.description}</p>
+                      <div className="mt-1">
+                        <p className={canReadFull ? "" : "line-clamp-2"}>
+                          <span className="text-sm text-muted-foreground">{m.description}</span>
+                        </p>
+                        {canReadFull && m.description.length > 100 && !expandedIds.has(m.id) && (
+                          <button
+                            onClick={() => {
+                              const newExpanded = new Set(expandedIds);
+                              newExpanded.add(m.id);
+                              setExpandedIds(newExpanded);
+                            }}
+                            className="text-xs text-primary hover:underline mt-1"
+                          >
+                            Read more
+                          </button>
+                        )}
+                        {canReadFull && expandedIds.has(m.id) && m.description.length > 100 && (
+                          <button
+                            onClick={() => {
+                              const newExpanded = new Set(expandedIds);
+                              newExpanded.delete(m.id);
+                              setExpandedIds(newExpanded);
+                            }}
+                            className="text-xs text-primary hover:underline mt-1"
+                          >
+                            Show less
+                          </button>
+                        )}
+                      </div>
                     )}
                     {m.units && (
                       <p className="mt-1 text-xs text-muted-foreground">

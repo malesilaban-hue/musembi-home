@@ -192,11 +192,21 @@ export default function Dashboard() {
               .select("balance,status,leases!inner(unit_id)")
               .in("leases.unit_id", assignedUnitIds)
           : supabase.from("invoices").select("balance,status"),
-        isCaretaker && assignedTenantIds.length > 0
-          ? supabase.from("payments").select("amount").gte("paid_at", monthStart).in("tenant_id", assignedTenantIds)
+        // Filter payments by leases on assigned units for caretakers
+        isCaretaker && assignedUnitIds.length > 0
+          ? supabase
+              .from("payments")
+              .select("amount,leases!inner(unit_id)")
+              .gte("paid_at", monthStart)
+              .in("leases.unit_id", assignedUnitIds)
           : supabase.from("payments").select("amount").gte("paid_at", monthStart),
-        isCaretaker && assignedTenantIds.length > 0
-          ? supabase.from("payments").select("amount").gte("paid_at", todayStart).in("tenant_id", assignedTenantIds)
+        // Filter payments by leases on assigned units for caretakers (today)
+        isCaretaker && assignedUnitIds.length > 0
+          ? supabase
+              .from("payments")
+              .select("amount,leases!inner(unit_id)")
+              .gte("paid_at", todayStart)
+              .in("leases.unit_id", assignedUnitIds)
           : supabase.from("payments").select("amount").gte("paid_at", todayStart),
       ]);
 

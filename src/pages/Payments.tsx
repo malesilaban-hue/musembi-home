@@ -408,6 +408,14 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
       const now = new Date();
       const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
 
+      // Get the active lease for this tenant to link the payment
+      const { data: leaseData } = await supabase
+        .from("leases")
+        .select("id")
+        .eq("tenant_id", values.tenant_id)
+        .eq("status", "active")
+        .maybeSingle();
+
       const payload: Record<string, unknown> = {
         receipt_number: receipt,
         tenant_id: values.tenant_id,
@@ -416,6 +424,7 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
         reference: values.reference || null,
         reason: values.reason || null,
         paid_at: values.paid_at,
+        lease_id: leaseData?.id || null,
       };
 
       const { error } = await supabase.from("payments").insert(payload as never);

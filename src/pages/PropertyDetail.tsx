@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Plus, Loader2, DoorClosed, Pencil, Users } from "lucide-react";
+import { ArrowLeft, Plus, Loader2, DoorClosed, Pencil, Users, Trash2 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -84,6 +84,9 @@ export default function PropertyDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [assignUnit, setAssignUnit] = useState<Unit | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [deletingUnit, setDeletingUnit] = useState<Unit | null>(null);
+  const [deletingConfirm, setDeletingConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [filter, setFilter] = useState<"all" | "vacant" | "occupied">("all");
 
   useEffect(() => {
@@ -114,6 +117,32 @@ export default function PropertyDetail() {
       leasedUnits[lease.unit_id] = true;
     });
     setUnitLeases(leasedUnits);
+  };
+
+  const handleDeleteUnit = async () => {
+    if (!deletingUnit) return;
+    
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase
+        .from("units")
+        .delete()
+        .eq("id", deletingUnit.id);
+      
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      
+      toast.success("Unit deleted successfully");
+      setDeletingUnit(null);
+      setDeletingConfirm(false);
+      void loadAll();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete unit");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   usePropertyTheme(property?.theme);
@@ -274,6 +303,58 @@ export default function PropertyDetail() {
                                     />
                                   )}
                                 </Dialog>
+                                {canManage && (
+                                  <Dialog open={deletingConfirm && deletingUnit?.id === u.id} onOpenChange={(open) => {
+                                    if (!open) {
+                                      setDeletingUnit(null);
+                                      setDeletingConfirm(false);
+                                    }
+                                  }}>
+                                    <DialogTrigger asChild>
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setDeletingUnit(u)}
+                                        className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                        title="Delete unit"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </Button>
+                                    </DialogTrigger>
+                                    {deletingUnit?.id === u.id && (
+                                      <DialogContent>
+                                        <DialogHeader>
+                                          <DialogTitle>Delete unit {u.house_number}?</DialogTitle>
+                                          <DialogDescription>
+                                            This action cannot be undone. This will permanently delete the unit and all associated data.
+                                          </DialogDescription>
+                                        </DialogHeader>
+                                        <DialogFooter>
+                                          <Button
+                                            variant="outline"
+                                            onClick={() => {
+                                              setDeletingUnit(null);
+                                              setDeletingConfirm(false);
+                                            }}
+                                          >
+                                            Cancel
+                                          </Button>
+                                          <Button
+                                            variant="destructive"
+                                            onClick={() => {
+                                              setDeletingConfirm(true);
+                                              void handleDeleteUnit();
+                                            }}
+                                            disabled={isDeleting}
+                                          >
+                                            {isDeleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                                            Delete unit
+                                          </Button>
+                                        </DialogFooter>
+                                      </DialogContent>
+                                    )}
+                                  </Dialog>
+                                )}
                               </>
                             )}
                           </div>
