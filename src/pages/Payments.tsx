@@ -292,13 +292,32 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
 
   const onSubmit = async (values: PaymentFormValues) => {
     try {
-      // Generate receipt number
       const now = new Date();
       const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
 
+      // Prefer explicit unit selection; look up lease if any
+      let leaseId: string | null = null;
+      let tenantId: string | null = values.tenant_id || null;
+      const unitId: string | null = values.unit_id || null;
+
+      if (unitId) {
+        const { data: leaseData } = await supabase
+          .from("leases")
+          .select("id,tenant_id")
+          .eq("unit_id", unitId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (leaseData) {
+          leaseId = leaseData.id;
+          if (!tenantId) tenantId = leaseData.tenant_id;
+        }
+      }
+
       const payload: Record<string, unknown> = {
         receipt_number: receipt,
-        tenant_id: values.tenant_id,
+        tenant_id: tenantId,
+        unit_id: unitId,
+        lease_id: leaseId,
         amount: values.amount,
         method: values.method,
         reference: values.reference || null,
@@ -327,19 +346,19 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
   };
 
   const handleUnitSelect = async (unitId: string, unitName: string) => {
-    // Get the tenant associated with this unit (via active lease)
+    setValue("unit_id", unitId);
+    setUnitSearch(unitName);
+    setShowUnitList(false);
+    // Autofill tenant if the unit has an active lease (doesn't require it)
     const { data: leaseData } = await supabase
       .from("leases")
       .select("tenant_id,tenants(full_name)")
       .eq("unit_id", unitId)
       .eq("status", "active")
       .maybeSingle();
-
     if (leaseData?.tenant_id) {
-      handleTenantSelect(leaseData.tenant_id, leaseData.tenants?.full_name || unitName);
+      handleTenantSelect(leaseData.tenant_id, (leaseData as any).tenants?.full_name || unitName);
     }
-    setUnitSearch(unitName);
-    setShowUnitList(false);
   };
 
   return (
