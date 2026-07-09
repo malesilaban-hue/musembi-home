@@ -38,8 +38,9 @@ interface Row {
   reference: string | null;
   reason: string | null;
   paid_at: string;
-  tenant_id: string;
+  tenant_id: string | null;
   lease_id: string | null;
+  unit_id: string | null;
   tenants: { id: string; full_name: string } | null;
   unit_label: string | null;
   property_name: string | null;
