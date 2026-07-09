@@ -439,10 +439,13 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
                 )}
               </div>
             </div>
-            {selectedTenantId && (
+            {(selectedTenantId || watch("unit_id")) && (
               <div className="rounded-lg bg-muted p-2">
                 <p className="text-xs font-medium text-foreground">
-                  ✓ Selected: {tenants?.find((t) => t.id === selectedTenantId)?.full_name}
+                  ✓ Selected:{" "}
+                  {selectedTenantId
+                    ? tenants?.find((t) => t.id === selectedTenantId)?.full_name
+                    : `Unit ${units.find((u) => u.id === watch("unit_id"))?.house_number ?? ""}`}
                 </p>
               </div>
             )}
