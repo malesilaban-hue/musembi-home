@@ -57,12 +57,15 @@ interface Unit {
 }
 
 const paymentSchema = z.object({
-  tenant_id: z.string().min(1, "Tenant required"),
+  tenant_id: z.string().min(1, "Tenant or unit required"),
   amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
   reference: z.string().trim().max(100).optional().or(z.literal("")),
   method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
   paid_at: z.string().min(1, "Date required"),
   reason: z.string().trim().max(255).optional().or(z.literal("")),
+}).refine((data) => data.tenant_id, {
+  message: "Please select a tenant or search by unit number",
+  path: ["tenant_id"],
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
@@ -337,16 +340,16 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-xs">Search by tenant or unit</Label>
+            <Label className="text-xs font-semibold">Tenant (search by name or unit number)</Label>
             <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
               {/* Tenant Search */}
               <div className="space-y-1.5 relative">
-                <Label htmlFor="tenant" className="text-xs">
-                  Tenant name
+                <Label htmlFor="tenant" className="text-xs text-muted-foreground">
+                  Search tenant name
                 </Label>
                 <Input
                   id="tenant"
-                  placeholder="Search tenant…"
+                  placeholder="Type tenant name…"
                   value={tenantSearch}
                   onChange={(e) => {
                     setTenantSearch(e.target.value);
@@ -372,12 +375,12 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
 
               {/* Unit Search */}
               <div className="space-y-1.5 relative">
-                <Label htmlFor="unit" className="text-xs">
-                  Unit number
+                <Label htmlFor="unit" className="text-xs text-muted-foreground">
+                  Or search unit number
                 </Label>
                 <Input
                   id="unit"
-                  placeholder="Search unit (e.g., A-01)…"
+                  placeholder="Type unit (e.g., A-01)…"
                   value={unitSearch}
                   onChange={(e) => {
                     setUnitSearch(e.target.value);
@@ -405,9 +408,11 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
               </div>
             </div>
             {selectedTenantId && (
-              <p className="text-xs text-muted-foreground">
-                Selected: {tenants?.find((t) => t.id === selectedTenantId)?.full_name}
-              </p>
+              <div className="rounded-lg bg-muted p-2">
+                <p className="text-xs font-medium text-foreground">
+                  ✓ Selected: {tenants?.find((t) => t.id === selectedTenantId)?.full_name}
+                </p>
+              </div>
             )}
             {errors.tenant_id && <p className="text-xs text-destructive">{errors.tenant_id.message}</p>}
           </div>

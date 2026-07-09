@@ -185,7 +185,13 @@ export default function Dashboard() {
           ? supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active").in("unit_id", assignedUnitIds)
           : supabase.from("leases").select("*", { count: "exact", head: true }).eq("status", "active"),
         supabase.from("tenants").select("*", { count: "exact", head: true }),
-        supabase.from("invoices").select("balance,status"),
+        // Filter invoices by assigned units for caretakers
+        isCaretaker && assignedUnitIds.length > 0
+          ? supabase
+              .from("invoices")
+              .select("balance,status,leases!inner(unit_id)")
+              .in("leases.unit_id", assignedUnitIds)
+          : supabase.from("invoices").select("balance,status"),
         isCaretaker && assignedTenantIds.length > 0
           ? supabase.from("payments").select("amount").gte("paid_at", monthStart).in("tenant_id", assignedTenantIds)
           : supabase.from("payments").select("amount").gte("paid_at", monthStart),
