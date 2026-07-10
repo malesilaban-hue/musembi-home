@@ -57,14 +57,15 @@ interface Unit {
 }
 
 const paymentSchema = z.object({
-  tenant_id: z.string().min(1, "Tenant or unit required"),
+  tenant_id: z.string().optional().or(z.literal("")),
+  lease_id: z.string().optional().or(z.literal("")),
   amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
   reference: z.string().trim().max(100).optional().or(z.literal("")),
   method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
   paid_at: z.string().min(1, "Date required"),
   reason: z.string().trim().max(255).optional().or(z.literal("")),
-}).refine((data) => data.tenant_id, {
-  message: "Please select a tenant or search by unit number",
+}).refine((data) => data.tenant_id || data.lease_id, {
+  message: "Please select a unit or tenant",
   path: ["tenant_id"],
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
