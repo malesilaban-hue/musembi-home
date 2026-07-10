@@ -3,6 +3,7 @@ import { lazy, Suspense } from "react";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireRole } from "./components/RequireRole";
 import { AppShell } from "./components/layout/AppShell";
+import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { Loader2 } from "lucide-react";
 
 const Auth = lazy(() => import("./pages/Auth"));
@@ -33,6 +34,7 @@ function PageFallback() {
 export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
+      <PWAInstallPrompt />
       <Routes>
         <Route path="/auth" element={<Auth />} />
         <Route

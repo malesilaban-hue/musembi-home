@@ -58,13 +58,14 @@ interface Unit {
 
 const paymentSchema = z.object({
   tenant_id: z.string().optional().or(z.literal("")),
+  unit_id: z.string().optional().or(z.literal("")),
   lease_id: z.string().optional().or(z.literal("")),
   amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
   reference: z.string().trim().max(100).optional().or(z.literal("")),
   method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
   paid_at: z.string().min(1, "Date required"),
   reason: z.string().trim().max(255).optional().or(z.literal("")),
-}).refine((data) => data.tenant_id || data.lease_id, {
+}).refine((data) => data.tenant_id || data.unit_id, {
   message: "Please select a unit or tenant",
   path: ["tenant_id"],
 });
@@ -438,17 +439,32 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
       const now = new Date();
       const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
 
-      // Get the active lease for this tenant to link the payment
-      const { data: leaseData } = await supabase
-        .from("leases")
-        .select("id")
-        .eq("tenant_id", values.tenant_id)
-        .eq("status", "active")
-        .maybeSingle();
+      // Get the active lease - first try by unit_id, then by tenant_id
+      let leaseData: any = null;
+      
+      if (values.unit_id) {
+        // Try to get lease by unit_id
+        const { data } = await supabase
+          .from("leases")
+          .select("id")
+          .eq("unit_id", values.unit_id)
+          .eq("status", "active")
+          .maybeSingle();
+        leaseData = data;
+      } else if (values.tenant_id) {
+        // Fallback: get lease by tenant_id
+        const { data } = await supabase
+          .from("leases")
+          .select("id")
+          .eq("tenant_id", values.tenant_id)
+          .eq("status", "active")
+          .maybeSingle();
+        leaseData = data;
+      }
 
       const payload: Record<string, unknown> = {
         receipt_number: receipt,
-        tenant_id: values.tenant_id,
+        tenant_id: values.tenant_id || null,
         amount: values.amount,
         method: values.method,
         reference: values.reference || null,
@@ -478,6 +494,9 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
   };
 
   const handleUnitSelect = async (unitId: string, unitName: string) => {
+    // Set the unit_id first (important for lease lookup in onSubmit)
+    setValue("unit_id", unitId);
+    
     // Get the tenant associated with this unit (via active lease)
     const { data: leaseData } = await supabase
       .from("leases")
