@@ -79,9 +79,7 @@ export default function Payments() {
 
   const reload = async () => {
     try {
-      let paymentsQuery = supabase
-        .from("payments")
-        .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id");
+      let paymentsData: any[] = [];
 
       // For caretakers, filter by assigned properties
       if (isCaretaker && user) {
@@ -94,7 +92,6 @@ export default function Payments() {
         const propertyIds = (caretakerProps ?? []).map(cp => cp.property_id);
         
         if (propertyIds.length === 0) {
-          // Caretaker has no assigned properties
           setItems([]);
           return;
         }
@@ -112,25 +109,57 @@ export default function Payments() {
           return;
         }
 
-        // Get tenant IDs from leases on those units
+        // Get lease IDs and tenant IDs for those units
         const { data: leases } = await supabase
           .from("leases")
-          .select("tenant_id")
+          .select("id,tenant_id")
           .in("unit_id", unitIds);
         
+        const leaseIds = (leases ?? []).map(l => l.id);
         const tenantIds = (leases ?? []).map(l => l.tenant_id);
         
-        if (tenantIds.length > 0) {
-          paymentsQuery = paymentsQuery.in("tenant_id", tenantIds);
-        } else {
+        if (leaseIds.length === 0 && tenantIds.length === 0) {
           setItems([]);
           return;
         }
+
+        // Get payments with lease_id from our leases OR with tenant_id and null lease_id
+        if (leaseIds.length > 0) {
+          const { data: byLease } = await supabase
+            .from("payments")
+            .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
+            .in("lease_id", leaseIds);
+          paymentsData = [...(paymentsData ?? []), ...(byLease ?? [])];
+        }
+
+        if (tenantIds.length > 0) {
+          const { data: byTenant } = await supabase
+            .from("payments")
+            .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
+            .in("tenant_id", tenantIds)
+            .is("lease_id", null);
+          paymentsData = [...(paymentsData ?? []), ...(byTenant ?? [])];
+        }
+
+        // Deduplicate
+        const seen = new Set<string>();
+        paymentsData = paymentsData.filter(p => {
+          if (seen.has(p.id)) return false;
+          seen.add(p.id);
+          return true;
+        });
+
+        paymentsData = paymentsData.sort((a, b) => new Date(b.paid_at).getTime() - new Date(a.paid_at).getTime());
+      } else {
+        // For admin/staff, get all payments
+        const { data, error } = await supabase
+          .from("payments")
+          .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
+          .order("paid_at", { ascending: false });
+        
+        if (error) return toast.error(error.message);
+        paymentsData = data ?? [];
       }
-
-      const { data: paymentsData, error: paymentsError } = await paymentsQuery.order("paid_at", { ascending: false });
-
-      if (paymentsError) return toast.error(paymentsError.message);
 
       if (!paymentsData || paymentsData.length === 0) {
         setItems([]);

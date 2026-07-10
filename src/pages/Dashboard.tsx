@@ -165,14 +165,16 @@ export default function Dashboard() {
         assignedUnitIds = (unitsData ?? []).map((u) => u.id);
       }
 
-      // For caretakers, get tenant IDs from leases on assigned units
+      // For caretakers, get tenant IDs and lease IDs from leases on assigned units
       let assignedTenantIds: string[] = [];
+      let assignedLeaseIds: string[] = [];
       if (isCaretaker && assignedUnitIds.length > 0) {
         const { data: leasesData } = await supabase
           .from("leases")
-          .select("tenant_id")
+          .select("tenant_id,id")
           .in("unit_id", assignedUnitIds);
         assignedTenantIds = (leasesData ?? []).map((l) => l.tenant_id);
+        assignedLeaseIds = (leasesData ?? []).map((l) => l.id);
       }
 
       // Execute all queries in parallel
@@ -192,21 +194,13 @@ export default function Dashboard() {
               .select("balance,status,leases!inner(unit_id)")
               .in("leases.unit_id", assignedUnitIds)
           : supabase.from("invoices").select("balance,status"),
-        // Filter payments by leases on assigned units for caretakers
-        isCaretaker && assignedUnitIds.length > 0
-          ? supabase
-              .from("payments")
-              .select("amount,leases!inner(unit_id)")
-              .gte("paid_at", monthStart)
-              .in("leases.unit_id", assignedUnitIds)
+        // Filter payments by lease_id for caretakers
+        isCaretaker && assignedLeaseIds.length > 0
+          ? supabase.from("payments").select("amount").gte("paid_at", monthStart).in("lease_id", assignedLeaseIds)
           : supabase.from("payments").select("amount").gte("paid_at", monthStart),
-        // Filter payments by leases on assigned units for caretakers (today)
-        isCaretaker && assignedUnitIds.length > 0
-          ? supabase
-              .from("payments")
-              .select("amount,leases!inner(unit_id)")
-              .gte("paid_at", todayStart)
-              .in("leases.unit_id", assignedUnitIds)
+        // Filter payments by lease_id for caretakers (today)
+        isCaretaker && assignedLeaseIds.length > 0
+          ? supabase.from("payments").select("amount").gte("paid_at", todayStart).in("lease_id", assignedLeaseIds)
           : supabase.from("payments").select("amount").gte("paid_at", todayStart),
       ]);
 
