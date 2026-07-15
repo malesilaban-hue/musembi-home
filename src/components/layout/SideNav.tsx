@@ -14,7 +14,7 @@ const items: Item[] = [
   { to: "/leases", label: "Leases", icon: FileSignature, roles: STAFF },
   { to: "/invoices", label: "Invoices", icon: ReceiptText },
   { to: "/payments", label: "Payments", icon: Wallet },
-  { to: "/payments/status/unpaid", label: "Unpaid units", icon: ReceiptText, roles: STAFF },
+  { to: "/payments/status/unpaid", label: "Payment status", icon: ReceiptText, roles: STAFF },
   { to: "/payments/status/paid", label: "Paid units", icon: ReceiptText, roles: STAFF },
   { to: "/maintenance", label: "Maintenance", icon: Wrench, roles: STAFF },
   { to: "/team", label: "Team", icon: UserCog, roles: ["super_admin", "landlord"] },
