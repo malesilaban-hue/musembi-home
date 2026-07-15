@@ -38,7 +38,7 @@ interface Row {
   reference: string | null;
   reason: string | null;
   paid_at: string;
-  tenant_id: string;
+  tenant_id: string | null;
   lease_id: string | null;
   unit_id: string | null;
   tenants: { id: string; full_name: string } | null;
@@ -66,8 +66,8 @@ const paymentSchema = z.object({
   method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
   paid_at: z.string().min(1, "Date required"),
   reason: z.string().trim().max(255).optional().or(z.literal("")),
-}).refine((data) => data.tenant_id || data.unit_id, {
-  message: "Please select a unit or tenant",
+}).refine((data) => !!data.tenant_id || !!data.unit_id, {
+  message: "Select a tenant or a unit",
   path: ["tenant_id"],
 });
 type PaymentFormValues = z.infer<typeof paymentSchema>;
@@ -233,10 +233,7 @@ export default function Payments() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load payments");
     }
-  };
 
-  useEffect(() => {
-    document.title = "Payments · MUSEMBI PMS";
     void reload();
     const ch = supabase
       .channel("payments-live")
@@ -459,44 +456,37 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
 
   const onSubmit = async (values: PaymentFormValues) => {
     try {
-      // Generate receipt number
       const now = new Date();
       const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
 
-      // Link the payment to the relevant lease using the selected unit first,
-      // then fall back to the selected tenant when needed.
-      let leaseData: any = null;
+      // Prefer explicit unit selection; look up lease if any
+      let leaseId: string | null = null;
+      let tenantId: string | null = values.tenant_id || null;
+      const unitId: string | null = values.unit_id || null;
 
-      if (values.unit_id) {
-        const { data } = await supabase
+      if (unitId) {
+        const { data: leaseData } = await supabase
           .from("leases")
-          .select("id,tenant_id,unit_id")
-          .eq("unit_id", values.unit_id)
-          .order("start_date", { ascending: false })
-          .limit(1);
-        leaseData = data?.[0] ?? null;
-      }
-
-      if (!leaseData && values.tenant_id) {
-        const { data } = await supabase
-          .from("leases")
-          .select("id,tenant_id,unit_id")
-          .eq("tenant_id", values.tenant_id)
-          .order("start_date", { ascending: false })
-          .limit(1);
-        leaseData = data?.[0] ?? null;
+          .select("id,tenant_id")
+          .eq("unit_id", unitId)
+          .eq("status", "active")
+          .maybeSingle();
+        if (leaseData) {
+          leaseId = leaseData.id;
+          if (!tenantId) tenantId = leaseData.tenant_id;
+        }
       }
 
       const payload: Record<string, unknown> = {
         receipt_number: receipt,
-        tenant_id: leaseData?.tenant_id ?? (values.tenant_id || null),
-        unit_id: values.unit_id || leaseData?.unit_id || null,
+        tenant_id: tenantId,
+        unit_id: unitId,
+        lease_id: leaseId,
         amount: values.amount,
         method: values.method,
         reference: values.reference || null,
         reason: values.reason || null,
         paid_at: values.paid_at,
-        lease_id: leaseData?.id || null,
       };
 
       const { error } = await supabase.from("payments").insert(payload as never);
@@ -520,9 +510,9 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
   };
 
   const handleUnitSelect = async (unitId: string, unitName: string) => {
-    // Set the unit_id first (important for lease lookup in onSubmit)
     setValue("unit_id", unitId);
-    
+    setUnitSearch(unitName);
+    setShowUnitList(false);
     // Get the tenant associated with this unit (via active lease)
     const { data } = await supabase
       .from("leases")
@@ -532,12 +522,9 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
       .limit(1);
 
     const leaseData = data?.[0] ?? null;
-
     if (leaseData?.tenant_id) {
-      handleTenantSelect(leaseData.tenant_id, leaseData.tenants?.full_name || unitName);
+      handleTenantSelect(leaseData.tenant_id, (leaseData as any).tenants?.full_name || unitName);
     }
-    setUnitSearch(unitName);
-    setShowUnitList(false);
   };
 
   return (
@@ -618,10 +605,13 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
                 )}
               </div>
             </div>
-            {selectedTenantId && (
+            {(selectedTenantId || watch("unit_id")) && (
               <div className="rounded-lg bg-muted p-2">
                 <p className="text-xs font-medium text-foreground">
-                  ✓ Selected: {tenants?.find((t) => t.id === selectedTenantId)?.full_name}
+                  ✓ Selected:{" "}
+                  {selectedTenantId
+                    ? tenants?.find((t) => t.id === selectedTenantId)?.full_name
+                    : `Unit ${units.find((u) => u.id === watch("unit_id"))?.house_number ?? ""}`}
                 </p>
               </div>
             )}
