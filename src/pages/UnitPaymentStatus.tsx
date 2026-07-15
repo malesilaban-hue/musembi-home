@@ -1,3 +1,4 @@
+import { NavLink } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -176,27 +177,59 @@ export default function UnitPaymentStatus({ mode }: { mode: "paid" | "unpaid" })
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{meta.title}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
-        </div>
-        <div className="flex items-center gap-2">
+      <header className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight md:text-3xl">{meta.title}</h1>
+            <p className="mt-1 text-sm text-muted-foreground">{meta.description}</p>
+          </div>
           <Badge className={meta.badge}>{mode === "paid" ? "Paid" : "Unpaid"}</Badge>
-          <div className="w-52">
-            <Select value={selectedProperty} onValueChange={setSelectedProperty}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by property" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All properties</SelectItem>
-                {properties.map((property) => (
-                  <SelectItem key={property.id} value={property.id}>
-                    {property.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        </div>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap gap-2 rounded-full border border-border bg-background px-1 py-1">
+            <NavLink
+              to="/payments/status/unpaid"
+              className={({ isActive }) =>
+                `rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`
+              }
+            >
+              Unpaid
+            </NavLink>
+            <NavLink
+              to="/payments/status/paid"
+              className={({ isActive }) =>
+                `rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                }`
+              }
+            >
+              Paid
+            </NavLink>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-52">
+              <Select value={selectedProperty} onValueChange={setSelectedProperty}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by property" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All properties</SelectItem>
+                  {properties.map((property) => (
+                    <SelectItem key={property.id} value={property.id}>
+                      {property.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
       </header>
