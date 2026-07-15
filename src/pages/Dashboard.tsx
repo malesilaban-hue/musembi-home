@@ -16,6 +16,7 @@ interface Stats {
   monthly_expected_rent: number;
   collected_month: number;
   collected_today: number;
+  collected_total: number;
   tenants: number;
   active_leases: number;
   outstanding: number;
@@ -52,8 +53,7 @@ export default function Dashboard() {
     return () => {
       void supabase.removeChannel(ch);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTenant, isCaretaker]);
+  }, [isTenant, isCaretaker, roles, user?.id]);
 
   const handleGenerateInvoices = async () => {
     setGeneratingInvoices(true);
@@ -113,6 +113,7 @@ export default function Dashboard() {
         monthly_expected_rent: Number(leaseRes.data.monthly_rent || 0),
         collected_month: collectedMonth,
         collected_today: collectedToday,
+        collected_total: totalPaid,
         tenants: 0,
         active_leases: 1,
         outstanding: Math.max(0, Number(leaseRes.data.monthly_rent || 0) - totalPaid),
@@ -124,8 +125,8 @@ export default function Dashboard() {
   const loadStaffDashboard = async () => {
     try {
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       
       // For caretakers, get assigned properties first
       let assignedPropertyIds: string[] = [];
@@ -137,25 +138,9 @@ export default function Dashboard() {
         assignedPropertyIds = (cpData ?? []).map((cp) => cp.property_id);
       }
 
-      // If caretaker has no properties, show empty state
-      if (isCaretaker && assignedPropertyIds.length === 0) {
-        setStats({
-          properties: 0,
-          units: 0,
-          vacant: 0,
-          expected_rent: 0,
-          monthly_expected_rent: 0,
-          collected_month: 0,
-          collected_today: 0,
-          tenants: 0,
-          active_leases: 0,
-          outstanding: 0,
-          overdue: 0,
-        });
-        return;
-      }
+      const hasAllPropertiesAccess = isCaretaker && assignedPropertyIds.length === 0;
 
-      // For caretakers, get unit IDs from assigned properties
+      // For caretakers, get unit IDs from assigned properties (or all units if access is global)
       let assignedUnitIds: string[] = [];
       if (isCaretaker && assignedPropertyIds.length > 0) {
         const { data: unitsData } = await supabase
@@ -165,14 +150,16 @@ export default function Dashboard() {
         assignedUnitIds = (unitsData ?? []).map((u) => u.id);
       }
 
-      // For caretakers, get tenant IDs from leases on assigned units
+      // For caretakers, get tenant IDs and lease IDs from leases on assigned units
       let assignedTenantIds: string[] = [];
+      let assignedLeaseIds: string[] = [];
       if (isCaretaker && assignedUnitIds.length > 0) {
         const { data: leasesData } = await supabase
           .from("leases")
-          .select("tenant_id")
+          .select("tenant_id,id")
           .in("unit_id", assignedUnitIds);
         assignedTenantIds = (leasesData ?? []).map((l) => l.tenant_id);
+        assignedLeaseIds = (leasesData ?? []).map((l) => l.id);
       }
 
       // Execute all queries in parallel
@@ -192,13 +179,35 @@ export default function Dashboard() {
               .select("balance,status,leases!inner(unit_id)")
               .in("leases.unit_id", assignedUnitIds)
           : supabase.from("invoices").select("balance,status"),
-        isCaretaker && assignedTenantIds.length > 0
-          ? supabase.from("payments").select("amount").gte("paid_at", monthStart).in("tenant_id", assignedTenantIds)
-          : supabase.from("payments").select("amount").gte("paid_at", monthStart),
-        isCaretaker && assignedTenantIds.length > 0
-          ? supabase.from("payments").select("amount").gte("paid_at", todayStart).in("tenant_id", assignedTenantIds)
-          : supabase.from("payments").select("amount").gte("paid_at", todayStart),
       ]);
+
+      // Load payments unscoped first. We'll apply caretaker-only scoping below.
+      const paymentRes = await supabase
+        .from("payments")
+        .select("amount,paid_at,tenant_id,lease_id,unit_id");
+
+      const paymentData = paymentRes.data ?? [];
+
+      // Only caretakers should have their view scoped to assigned properties/units.
+      let scopedPayments = paymentData as Array<{ amount: number | string; paid_at: string; tenant_id?: string | null; lease_id?: string | null; unit_id?: string | null }>;
+      if (isCaretaker) {
+        if (hasAllPropertiesAccess) {
+          // caretaker with global access sees all payments
+          scopedPayments = paymentData;
+        } else {
+          scopedPayments = paymentData.filter((payment) => {
+            const matchesUnit = Boolean(payment.unit_id && assignedUnitIds.includes(payment.unit_id));
+            const matchesLease = Boolean(payment.lease_id && assignedLeaseIds.includes(payment.lease_id));
+            const matchesTenant = Boolean(
+              payment.tenant_id &&
+              assignedTenantIds.includes(payment.tenant_id) &&
+              !payment.lease_id &&
+              !payment.unit_id,
+            );
+            return matchesUnit || matchesLease || matchesTenant;
+          });
+        }
+      }
 
       // Extract results safely
       const pCount = results[0].status === "fulfilled" ? results[0].value.count ?? 0 : 0;
@@ -206,24 +215,29 @@ export default function Dashboard() {
       const lCount = results[2].status === "fulfilled" ? results[2].value.count ?? 0 : 0;
       const tCount = results[3].status === "fulfilled" ? results[3].value.count ?? 0 : 0;
       const invRes = results[4].status === "fulfilled" ? results[4].value.data ?? [] : [];
-      const monthPayRes = results[5].status === "fulfilled" ? results[5].value.data ?? [] : [];
-      const todayPayRes = results[6].status === "fulfilled" ? results[6].value.data ?? [] : [];
+
+      const occupiedUnits = uRes.filter((u: any) => u.status === "occupied");
+      const occupiedRent = occupiedUnits.reduce((sum: number, u: any) => sum + Number(u.rent || 0), 0);
+      const collectedMonth = scopedPayments
+        .filter((p) => new Date(p.paid_at) >= monthStart)
+        .reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+      const collectedToday = scopedPayments
+        .filter((p) => new Date(p.paid_at) >= todayStart)
+        .reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
+      const collectedTotal = scopedPayments.reduce((s: number, p: any) => s + Number(p.amount || 0), 0);
 
       setStats({
-        properties: isCaretaker ? assignedPropertyIds.length : pCount,
+        properties: isCaretaker ? (hasAllPropertiesAccess ? pCount : assignedPropertyIds.length) : pCount,
         units: uRes.length,
         vacant: uRes.filter((u: any) => u.status === "vacant").length,
-        expected_rent: uRes
-          .filter((u: any) => u.status === "occupied")
-          .reduce((sum: number, u: any) => sum + Number(u.rent || 0), 0),
-        monthly_expected_rent: uRes
-          .filter((u: any) => u.status === "occupied")
-          .reduce((sum: number, u: any) => sum + Number(u.rent || 0), 0),
-        collected_month: monthPayRes.reduce((s: number, p: any) => s + Number(p.amount || 0), 0),
-        collected_today: todayPayRes.reduce((s: number, p: any) => s + Number(p.amount || 0), 0),
+        expected_rent: occupiedRent,
+        monthly_expected_rent: occupiedRent,
+        collected_month: collectedMonth,
+        collected_today: collectedToday,
+        collected_total: collectedTotal,
         tenants: tCount,
-        active_leases: lCount,
-        outstanding: invRes.reduce((s: number, i: any) => s + Number(i.balance || 0), 0),
+        active_leases: occupiedUnits.length || lCount,
+        outstanding: Math.max(0, occupiedRent - collectedTotal),
         overdue: invRes.filter((i: any) => i.status === "overdue").length,
       });
     } catch (err) {
@@ -237,6 +251,7 @@ export default function Dashboard() {
         monthly_expected_rent: 0,
         collected_month: 0,
         collected_today: 0,
+        collected_total: 0,
         tenants: 0,
         active_leases: 0,
         outstanding: 0,
@@ -254,6 +269,7 @@ export default function Dashboard() {
     { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
     { label: "Collected today", value: stats ? KES(stats.collected_today) : "—", icon: TrendingUp },
     { label: "Collected this month", value: stats ? KES(stats.collected_month) : "—", icon: TrendingUp },
+    { label: "Total collected", value: stats ? KES(stats.collected_total) : "—", icon: Wallet },
     { label: "Outstanding balance", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
     { label: "Overdue invoices", value: stats?.overdue ?? "—", icon: AlertTriangle },
   ];
@@ -265,6 +281,7 @@ export default function Dashboard() {
     { label: "Occupied units", value: stats ? (stats.units - stats.vacant) : "—", icon: Users },
     { label: "Expected rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
     { label: "Collected this month", value: stats ? KES(stats.collected_month) : "—", icon: TrendingUp },
+    { label: "Total collected", value: stats ? KES(stats.collected_total) : "—", icon: Wallet },
     { label: "Active leases", value: stats?.active_leases ?? "—", icon: FileSignature },
     { label: "Outstanding", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
   ];
@@ -272,6 +289,7 @@ export default function Dashboard() {
   const tenantCards = [
     { label: "Your rent", value: stats ? KES(stats.expected_rent) : "—", icon: Wallet },
     { label: "Paid this month", value: stats ? KES(stats.collected_month) : "—", icon: TrendingUp },
+    { label: "Total paid", value: stats ? KES(stats.collected_total) : "—", icon: Wallet },
     { label: "Outstanding", value: stats ? KES(stats.outstanding) : "—", icon: ReceiptText },
   ];
 

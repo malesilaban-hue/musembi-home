@@ -60,6 +60,7 @@ interface Unit {
 const paymentSchema = z.object({
   tenant_id: z.string().optional().or(z.literal("")),
   unit_id: z.string().optional().or(z.literal("")),
+  lease_id: z.string().optional().or(z.literal("")),
   amount: z.string().min(1, "Amount required").transform(Number).pipe(z.number().positive("Amount must be positive")),
   reference: z.string().trim().max(100).optional().or(z.literal("")),
   method: z.enum(["cash", "mpesa", "bank_transfer", "cheque"]),
@@ -72,80 +73,167 @@ const paymentSchema = z.object({
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 export default function Payments() {
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const canRecord = hasRole(["super_admin", "landlord", "accountant", "caretaker"]);
+  const isCaretaker = hasRole(["caretaker"]);
   const [items, setItems] = useState<Row[] | null>(null);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
 
   const reload = async () => {
-    const { data: paymentsData, error: paymentsError } = await supabase
-      .from("payments")
-      .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
-      .order("paid_at", { ascending: false });
+    try {
+      let paymentsData: any[] = [];
 
-    if (paymentsError) return toast.error(paymentsError.message);
+      // For caretakers, filter by assigned properties.
+      if (isCaretaker && user) {
+        const { data: caretakerProps, error: caretakerPropsError } = await supabase
+          .from("caretaker_properties")
+          .select("property_id")
+          .eq("user_id", user.id);
 
-    if (!paymentsData || paymentsData.length === 0) {
-      setItems([]);
-      return;
+        if (caretakerPropsError) {
+          toast.error(caretakerPropsError.message);
+          setItems([]);
+          return;
+        }
+
+        const propertyIds = (caretakerProps ?? []).map((cp) => cp.property_id);
+
+        if (propertyIds.length === 0) {
+          setItems([]);
+          return;
+        }
+
+        const { data: units, error: unitsError } = await supabase
+          .from("units")
+          .select("id,property_id")
+          .in("property_id", propertyIds);
+
+        if (unitsError) {
+          toast.error(unitsError.message);
+          setItems([]);
+          return;
+        }
+
+        const unitIds = (units ?? []).map((u) => u.id);
+
+        if (unitIds.length === 0) {
+          setItems([]);
+          return;
+        }
+
+        const { data: leases, error: leasesError } = await supabase
+          .from("leases")
+          .select("id,tenant_id,unit_id")
+          .in("unit_id", unitIds);
+
+        if (leasesError) {
+          toast.error(leasesError.message);
+          setItems([]);
+          return;
+        }
+
+        const { data, error } = await supabase
+          .from("payments")
+          .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
+          .order("paid_at", { ascending: false });
+
+        if (error) {
+          toast.error(error.message);
+          return;
+        }
+
+        const scopedLeaseIds = new Set((leases ?? []).map((l) => l.id));
+        const scopedTenantIds = new Set((leases ?? []).map((l) => l.tenant_id).filter(Boolean) as string[]);
+        const scopedUnitIds = new Set(unitIds);
+
+        paymentsData = (data ?? []).filter((payment) => {
+          const matchesUnit = Boolean(payment.unit_id && scopedUnitIds.has(payment.unit_id));
+          const matchesLease = Boolean(payment.lease_id && scopedLeaseIds.has(payment.lease_id));
+          const matchesTenant = Boolean(
+            payment.tenant_id &&
+            scopedTenantIds.has(payment.tenant_id) &&
+            !payment.lease_id &&
+            !payment.unit_id,
+          );
+          return matchesUnit || matchesLease || matchesTenant;
+        });
+      } else {
+        // For admin/staff, get all payments
+        const { data, error } = await supabase
+          .from("payments")
+          .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
+          .order("paid_at", { ascending: false });
+        
+        if (error) return toast.error(error.message);
+        paymentsData = data ?? [];
+      }
+
+      if (!paymentsData || paymentsData.length === 0) {
+        setItems([]);
+        return;
+      }
+
+      const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id).filter(Boolean) as string[])];
+      const leaseIds = [...new Set(paymentsData.map((p) => p.lease_id).filter(Boolean) as string[])];
+      const paymentUnitIds = [...new Set(paymentsData.map((p) => p.unit_id).filter(Boolean) as string[])];
+
+      const [tenantsRes, leasesRes, unitsRes] = await Promise.all([
+        supabase.from("tenants").select("id,full_name").in("id", tenantIds),
+        leaseIds.length
+          ? supabase
+              .from("leases")
+              .select("id,units(house_number,properties(name))")
+              .in("id", leaseIds)
+          : Promise.resolve({ data: [] as unknown[] }),
+        paymentUnitIds.length
+          ? supabase
+              .from("units")
+              .select("id,house_number,properties(name)")
+              .in("id", paymentUnitIds)
+          : Promise.resolve({ data: [] as unknown[] }),
+      ]);
+
+      const tenantMap = new Map((tenantsRes.data ?? []).map((t) => [t.id, t]));
+      const leaseMap = new Map(
+        ((leasesRes.data ?? []) as Array<{
+          id: string;
+          units: { house_number: string; properties: { name: string } | null } | null;
+        }>).map((l) => [l.id, l]),
+      );
+      const unitMap = new Map(
+        ((unitsRes.data ?? []) as Array<{
+          id: string;
+          house_number: string;
+          properties: { name: string } | null;
+        }>).map((u) => [u.id, u]),
+      );
+
+      const formatted: Row[] = paymentsData.map((p) => {
+        const lease = p.lease_id ? leaseMap.get(p.lease_id) : null;
+        const unit = p.unit_id ? unitMap.get(p.unit_id) : null;
+        return {
+          id: p.id,
+          receipt_number: p.receipt_number,
+          amount: Number(p.amount),
+          method: p.method,
+          reference: p.reference,
+          reason: p.reason,
+          paid_at: p.paid_at,
+          tenant_id: p.tenant_id,
+          lease_id: p.lease_id,
+          unit_id: p.unit_id ?? null,
+          tenants: tenantMap.get(p.tenant_id) ?? null,
+          unit_label: unit?.house_number ?? lease?.units?.house_number ?? null,
+          property_name: unit?.properties?.name ?? lease?.units?.properties?.name ?? null,
+        };
+      });
+
+      setItems(formatted);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load payments");
     }
 
-    const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id).filter(Boolean) as string[])];
-    const leaseIds = [...new Set(paymentsData.map((p) => p.lease_id).filter(Boolean) as string[])];
-    const unitIds = [...new Set(paymentsData.map((p) => (p as any).unit_id).filter(Boolean) as string[])];
-
-    const [tenantsRes, leasesRes, unitsRes] = await Promise.all([
-      tenantIds.length
-        ? supabase.from("tenants").select("id,full_name").in("id", tenantIds)
-        : Promise.resolve({ data: [] as any[] }),
-      leaseIds.length
-        ? supabase
-            .from("leases")
-            .select("id,units(house_number,properties(name))")
-            .in("id", leaseIds)
-        : Promise.resolve({ data: [] as unknown[] }),
-      unitIds.length
-        ? supabase.from("units").select("id,house_number,properties(name)").in("id", unitIds)
-        : Promise.resolve({ data: [] as any[] }),
-    ]);
-
-    const tenantMap = new Map((tenantsRes.data ?? []).map((t: any) => [t.id, t]));
-    const leaseMap = new Map(
-      ((leasesRes.data ?? []) as Array<{
-        id: string;
-        units: { house_number: string; properties: { name: string } | null } | null;
-      }>).map((l) => [l.id, l]),
-    );
-    const unitMap = new Map(
-      ((unitsRes.data ?? []) as any[]).map((u) => [u.id, u]),
-    );
-
-    const formatted: Row[] = paymentsData.map((p: any) => {
-      const lease = p.lease_id ? leaseMap.get(p.lease_id) : null;
-      const unit = p.unit_id ? unitMap.get(p.unit_id) : null;
-      return {
-        id: p.id,
-        receipt_number: p.receipt_number,
-        amount: Number(p.amount),
-        method: p.method,
-        reference: p.reference,
-        reason: p.reason,
-        paid_at: p.paid_at,
-        tenant_id: p.tenant_id,
-        lease_id: p.lease_id,
-        unit_id: p.unit_id ?? null,
-        tenants: p.tenant_id ? (tenantMap.get(p.tenant_id) ?? null) : null,
-        unit_label: lease?.units?.house_number ?? unit?.house_number ?? null,
-        property_name: lease?.units?.properties?.name ?? unit?.properties?.name ?? null,
-      };
-    });
-
-    setItems(formatted);
-  };
-
-  useEffect(() => {
-    document.title = "Payments · MUSEMBI PMS";
     void reload();
     const ch = supabase
       .channel("payments-live")
@@ -166,7 +254,9 @@ export default function Payments() {
     return (
       r.receipt_number.toLowerCase().includes(s) ||
       (r.tenants?.full_name ?? "").toLowerCase().includes(s) ||
-      (r.reference ?? "").toLowerCase().includes(s)
+      (r.reference ?? "").toLowerCase().includes(s) ||
+      (r.unit_label ?? "").toLowerCase().includes(s) ||
+      (r.property_name ?? "").toLowerCase().includes(s)
     );
   });
 
@@ -202,7 +292,7 @@ export default function Payments() {
         </div>
       </header>
 
-      <Input placeholder="Search receipt / tenant / reference…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-md" />
+      <Input placeholder="Search receipt / tenant / unit / property / reference…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-md" />
 
       {items === null ? (
         <div className="flex h-40 items-center justify-center">
@@ -247,6 +337,8 @@ export default function Payments() {
 }
 
 function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
+  const { user, hasRole } = useAuth();
+  const isCaretaker = hasRole(["caretaker"]);
   const [tenants, setTenants] = useState<Tenant[] | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
   const [tenantSearch, setTenantSearch] = useState("");
@@ -268,19 +360,91 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
 
   useEffect(() => {
     const loadData = async () => {
-      const [tenantsRes, unitsRes] = await Promise.all([
-        supabase.from("tenants").select("id,full_name").order("full_name"),
-        supabase
+      try {
+        // For caretakers, filter tenants by assigned properties
+        if (isCaretaker && user) {
+          const { data: caretakerProps } = await supabase
+            .from("caretaker_properties")
+            .select("property_id")
+            .eq("user_id", user.id);
+          
+          const propertyIds = (caretakerProps ?? []).map(cp => cp.property_id);
+          
+          if (propertyIds.length > 0) {
+            // Get units for assigned properties
+            const { data: unitData } = await supabase
+              .from("units")
+              .select("id")
+              .in("property_id", propertyIds);
+            
+            const unitIds = (unitData ?? []).map(u => u.id);
+            
+            if (unitIds.length > 0) {
+              // Get leases for those units
+              const { data: leaseData } = await supabase
+                .from("leases")
+                .select("tenant_id,tenants(id,full_name)")
+                .in("unit_id", unitIds);
+              
+              const caretakerTenants = (leaseData ?? [])
+                .filter((l) => l.tenants)
+                .map((l) => l.tenants!);
+              
+              // Remove duplicates
+              const uniqueTenants = Array.from(
+                new Map(caretakerTenants.map((t) => [t.id, t])).values()
+              );
+              
+              setTenants(uniqueTenants.sort((a, b) => a.full_name.localeCompare(b.full_name)));
+            } else {
+              setTenants([]);
+            }
+          } else {
+            setTenants([]);
+          }
+        } else {
+          // For non-caretakers, show all tenants
+          const { data: allTenants } = await supabase
+            .from("tenants")
+            .select("id,full_name")
+            .order("full_name");
+          setTenants(allTenants ?? []);
+        }
+      } catch (err) {
+        console.error("Error loading tenants:", err);
+        setTenants([]);
+      }
+
+      try {
+        // Load units for caretaker or all units
+        let unitsQuery = supabase
           .from("units")
           .select("id,house_number,properties(name)")
           .in("status", ["occupied", "vacant"])
-          .order("house_number"),
-      ]);
-      if (!tenantsRes.error) setTenants(tenantsRes.data ?? []);
-      if (!unitsRes.error) setUnits(unitsRes.data ?? []);
+          .order("house_number");
+
+        if (isCaretaker && user) {
+          const { data: caretakerProps } = await supabase
+            .from("caretaker_properties")
+            .select("property_id")
+            .eq("user_id", user.id);
+          
+          const propertyIds = (caretakerProps ?? []).map(cp => cp.property_id);
+          
+          if (propertyIds.length > 0) {
+            unitsQuery = unitsQuery.in("property_id", propertyIds);
+          }
+        }
+
+        const { data: unitsData, error: unitsError } = await unitsQuery;
+        if (!unitsError) setUnits(unitsData ?? []);
+      } catch (err) {
+        console.error("Error loading units:", err);
+        setUnits([]);
+      }
     };
     void loadData();
-  }, []);
+  }, [isCaretaker, user]);
 
   const filteredTenants = (tenants ?? []).filter((t) =>
     t.full_name.toLowerCase().includes(tenantSearch.toLowerCase())
@@ -349,13 +513,15 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
     setValue("unit_id", unitId);
     setUnitSearch(unitName);
     setShowUnitList(false);
-    // Autofill tenant if the unit has an active lease (doesn't require it)
-    const { data: leaseData } = await supabase
+    // Get the tenant associated with this unit (via active lease)
+    const { data } = await supabase
       .from("leases")
       .select("tenant_id,tenants(full_name)")
       .eq("unit_id", unitId)
-      .eq("status", "active")
-      .maybeSingle();
+      .order("start_date", { ascending: false })
+      .limit(1);
+
+    const leaseData = data?.[0] ?? null;
     if (leaseData?.tenant_id) {
       handleTenantSelect(leaseData.tenant_id, (leaseData as any).tenants?.full_name || unitName);
     }

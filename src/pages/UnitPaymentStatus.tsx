@@ -93,11 +93,11 @@ export default function UnitPaymentStatus({ mode }: { mode: "paid" | "unpaid" })
         const paymentsData = (paymentsRes.data ?? []) as PaymentRecord[];
 
         const latestPaymentByUnit = new Map<string, PaymentRecord>();
-        for (const payment of paymentsData) {
+        paymentsData.forEach((payment) => {
           if (payment.unit_id && !latestPaymentByUnit.has(payment.unit_id)) {
             latestPaymentByUnit.set(payment.unit_id, payment);
           }
-        }
+        });
 
         const tenantIds = Array.from(
           new Set(
@@ -143,7 +143,7 @@ export default function UnitPaymentStatus({ mode }: { mode: "paid" | "unpaid" })
               rent: unit.rent,
               tenant_name: tenantName,
               payment,
-            } as UnitSummary;
+            } satisfies UnitSummary;
           })
           .filter((unit) => (mode === "paid" ? Boolean(unit.payment) : !unit.payment));
 

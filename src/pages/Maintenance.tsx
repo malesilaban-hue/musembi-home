@@ -24,7 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Wrench, Loader2 } from "lucide-react";
+import { Plus, Wrench, Loader2, CheckCircle2, XCircle, MessageSquareText } from "lucide-react";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,6 +41,9 @@ interface Maintenance {
   priority: string;
   reported_date: string;
   completion_date: string | null;
+  property_id: string;
+  unit_id: string | null;
+  admin_note: string | null;
   units: { house_number: string; properties: { name: string } | null } | null;
 }
 
@@ -78,18 +81,45 @@ const priorityColor: Record<string, string> = {
 export default function Maintenance() {
   const { hasRole, user } = useAuth();
   const canCreate = hasRole(["super_admin", "landlord", "accountant", "caretaker"]);
+  const canReadFull = hasRole(["super_admin", "landlord"]);
+  const canManage = hasRole(["super_admin", "landlord"]);
   const [items, setItems] = useState<Maintenance[] | null>(null);
   const [properties, setProperties] = useState<Property[]>([]);
+  const [maintenanceTable, setMaintenanceTable] = useState("maintenance");
+  const [hasAdminNote, setHasAdminNote] = useState(false);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<string>("all");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [busyActionId, setBusyActionId] = useState<string | null>(null);
 
-  const reload = async () => {
-    let query = supabase
-      .from("maintenance")
-      .select(
-        "id,title,description,estimated_cost,actual_cost,status,priority,reported_date,completion_date,units(house_number,properties(name))"
-      )
-      .order("reported_date", { ascending: false });
+  const resolveMaintenanceTable = async (): Promise<string> => {
+    const candidates = ["maintenance", "maintenance_requests", "maintenances"];
+    for (const tableName of candidates) {
+      const { error } = await supabase.from(tableName).select("id").limit(1);
+      if (!error) return tableName;
+    }
+    return "maintenance";
+  };
+
+  const reload = async (tableName = maintenanceTable) => {
+    const selectCols = [
+      "id",
+      "title",
+      "description",
+      "estimated_cost",
+      "actual_cost",
+      "status",
+      "priority",
+      "reported_date",
+      "completion_date",
+      "property_id",
+      "unit_id",
+    ];
+    if (hasAdminNote) selectCols.push("admin_note");
+    const selectStr = `${selectCols.join(",")},units(house_number,properties(name))`;
+
+    let query = supabase.from(tableName).select(selectStr).order("reported_date", { ascending: false });
 
     if (filter !== "all") {
       query = query.eq("status", filter);
@@ -111,12 +141,61 @@ export default function Maintenance() {
 
   useEffect(() => {
     document.title = "Maintenance · MUSEMBI PMS";
-    void reload();
-    void loadProperties();
+    void (async () => {
+      const resolvedTable = await resolveMaintenanceTable();
+      setMaintenanceTable(resolvedTable);
+      // detect if admin_note column exists on the chosen table
+      try {
+        const { error } = await supabase.from(resolvedTable).select("admin_note").limit(1);
+        setHasAdminNote(!error);
+      } catch (e) {
+        setHasAdminNote(false);
+      }
+      await loadProperties();
+      await reload(resolvedTable);
+    })();
   }, [filter]);
 
   const totalEstimated = (items ?? []).reduce((sum, m) => sum + Number(m.estimated_cost || 0), 0);
   const totalActual = (items ?? []).reduce((sum, m) => sum + Number(m.actual_cost || 0), 0);
+
+  const handleStatusChange = async (id: string, status: string) => {
+    setBusyActionId(id);
+    try {
+      const { error } = await supabase
+        .from(maintenanceTable)
+        .update({
+          status,
+          completion_date: status === "completed" ? new Date().toISOString() : null,
+        })
+        .eq("id", id);
+      if (error) throw error;
+      toast.success(status === "completed" ? "Maintenance marked as completed" : "Maintenance cancelled");
+      await reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update maintenance");
+    } finally {
+      setBusyActionId(null);
+    }
+  };
+
+  const handleSaveComment = async (id: string) => {
+    const note = (commentDrafts[id] ?? "").trim();
+    setBusyActionId(id);
+    try {
+      if (!hasAdminNote) {
+        throw new Error("This maintenance table does not support admin comments");
+      }
+      const { error } = await supabase.from(maintenanceTable).update({ admin_note: note || null }).eq("id", id);
+      if (error) throw error;
+      toast.success("Comment saved");
+      await reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save comment");
+    } finally {
+      setBusyActionId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -134,6 +213,7 @@ export default function Maintenance() {
             </DialogTrigger>
             <MaintenanceDialog
               properties={properties}
+              tableName={maintenanceTable}
               onCreated={() => {
                 setOpen(false);
                 void reload();
@@ -215,11 +295,40 @@ export default function Maintenance() {
                       </Badge>
                     </div>
                     {m.description && (
-                      <p className="mt-1 text-sm text-muted-foreground line-clamp-2">{m.description}</p>
+                      <div className="mt-1">
+                        <p className={canReadFull ? "" : "line-clamp-2"}>
+                          <span className="text-sm text-muted-foreground">{m.description}</span>
+                        </p>
+                        {canReadFull && m.description.length > 100 && !expandedIds.has(m.id) && (
+                          <button
+                            onClick={() => {
+                              const newExpanded = new Set(expandedIds);
+                              newExpanded.add(m.id);
+                              setExpandedIds(newExpanded);
+                            }}
+                            className="text-xs text-primary hover:underline mt-1"
+                          >
+                            Read more
+                          </button>
+                        )}
+                        {canReadFull && expandedIds.has(m.id) && m.description.length > 100 && (
+                          <button
+                            onClick={() => {
+                              const newExpanded = new Set(expandedIds);
+                              newExpanded.delete(m.id);
+                              setExpandedIds(newExpanded);
+                            }}
+                            className="text-xs text-primary hover:underline mt-1"
+                          >
+                            Show less
+                          </button>
+                        )}
+                      </div>
                     )}
-                    {m.units && (
+                    {(properties.find((p) => p.id === m.property_id)?.name || m.units?.properties?.name || m.unit_id) && (
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {m.units.properties?.name} · Unit {m.units.house_number}
+                        {properties.find((p) => p.id === m.property_id)?.name ?? m.units?.properties?.name ?? "Apartment"}
+                        {m.units?.house_number ? ` · Unit ${m.units.house_number}` : m.unit_id ? " · Unit linked" : ""}
                       </p>
                     )}
                     <div className="mt-2 flex flex-wrap gap-4 text-sm">
@@ -242,6 +351,43 @@ export default function Maintenance() {
                     </div>
                   </div>
                 </div>
+                {canManage && (
+                  <div className="mt-4 space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleStatusChange(m.id, "completed")}
+                        disabled={busyActionId === m.id || m.status === "completed"}
+                      >
+                        <CheckCircle2 className="mr-1 h-4 w-4" /> Done
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void handleStatusChange(m.id, "cancelled")}
+                        disabled={busyActionId === m.id || m.status === "cancelled"}
+                      >
+                        <XCircle className="mr-1 h-4 w-4" /> Cancel
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-muted-foreground">Admin comment</label>
+                      <Textarea
+                        rows={2}
+                        value={commentDrafts[m.id] ?? m.admin_note ?? ""}
+                        onChange={(e) => setCommentDrafts((drafts) => ({ ...drafts, [m.id]: e.target.value }))}
+                        placeholder="Add a note for the tenant or caretaker..."
+                      />
+                      <Button size="sm" variant="secondary" onClick={() => void handleSaveComment(m.id)} disabled={busyActionId === m.id}>
+                        <MessageSquareText className="mr-1 h-4 w-4" /> Save comment
+                      </Button>
+                      {m.admin_note && !commentDrafts[m.id] && (
+                        <p className="text-xs text-muted-foreground">Saved note: {m.admin_note}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -253,12 +399,15 @@ export default function Maintenance() {
 
 function MaintenanceDialog({
   properties,
+  tableName,
   onCreated,
 }: {
   properties: Property[];
+  tableName: string;
   onCreated: () => void;
 }) {
   const { user } = useAuth();
+  const [units, setUnits] = useState<Array<{ id: string; house_number: string }>>([]);
   const {
     register,
     handleSubmit,
@@ -277,8 +426,21 @@ function MaintenanceDialog({
 
   const selectedProperty = watch("property_id");
 
+  useEffect(() => {
+    const loadUnits = async () => {
+      if (!selectedProperty) {
+        setUnits([]);
+        setValue("unit_id", "");
+        return;
+      }
+      const { data, error } = await supabase.from("units").select("id,house_number").eq("property_id", selectedProperty).order("house_number");
+      if (!error) setUnits(data ?? []);
+    };
+    void loadUnits();
+  }, [selectedProperty, setValue]);
+
   const onSubmit = async (v: FormValues) => {
-    const { error } = await supabase.from("maintenance").insert({
+    const { error } = await supabase.from(tableName).insert({
       title: v.title,
       description: v.description || null,
       property_id: v.property_id,
@@ -326,6 +488,27 @@ function MaintenanceDialog({
                     {properties.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
                         {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </Field>
+          <Field label="Unit">
+            <Controller
+              control={control}
+              name="unit_id"
+              render={({ field }) => (
+                <Select value={field.value || ""} onValueChange={field.onChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Optional unit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">Any unit</SelectItem>
+                    {units.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.house_number}
                       </SelectItem>
                     ))}
                   </SelectContent>
