@@ -85,7 +85,6 @@ export default function PropertyDetail() {
   const [assignUnit, setAssignUnit] = useState<Unit | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [deletingUnit, setDeletingUnit] = useState<Unit | null>(null);
-  const [deletingConfirm, setDeletingConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [filter, setFilter] = useState<"all" | "vacant" | "occupied">("all");
 
@@ -111,10 +110,13 @@ export default function PropertyDetail() {
     setProperty(p as Property | null);
     setUnits((u ?? []) as Unit[]);
     
-    // Build a map of which units have active leases
+    // Treat occupied units as leased so the property view stays consistent
     const leasedUnits: Record<string, boolean> = {};
+    (u ?? []).forEach((unit: any) => {
+      leasedUnits[unit.id] = unit.status === "occupied";
+    });
     (l ?? []).forEach((lease: any) => {
-      leasedUnits[lease.unit_id] = true;
+      if (lease.unit_id) leasedUnits[lease.unit_id] = true;
     });
     setUnitLeases(leasedUnits);
   };
@@ -136,7 +138,6 @@ export default function PropertyDetail() {
       
       toast.success("Unit deleted successfully");
       setDeletingUnit(null);
-      setDeletingConfirm(false);
       void loadAll();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to delete unit");
@@ -304,10 +305,9 @@ export default function PropertyDetail() {
                                   )}
                                 </Dialog>
                                 {canManage && (
-                                  <Dialog open={deletingConfirm && deletingUnit?.id === u.id} onOpenChange={(open) => {
+                                  <Dialog open={deletingUnit?.id === u.id} onOpenChange={(open) => {
                                     if (!open) {
                                       setDeletingUnit(null);
-                                      setDeletingConfirm(false);
                                     }
                                   }}>
                                     <DialogTrigger asChild>
@@ -342,7 +342,6 @@ export default function PropertyDetail() {
                                           <Button
                                             variant="destructive"
                                             onClick={() => {
-                                              setDeletingConfirm(true);
                                               void handleDeleteUnit();
                                             }}
                                             disabled={isDeleting}

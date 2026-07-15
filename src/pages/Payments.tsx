@@ -40,6 +40,7 @@ interface Row {
   paid_at: string;
   tenant_id: string;
   lease_id: string | null;
+  unit_id: string | null;
   tenants: { id: string; full_name: string } | null;
   unit_label: string | null;
   property_name: string | null;
@@ -83,80 +84,85 @@ export default function Payments() {
     try {
       let paymentsData: any[] = [];
 
-      // For caretakers, filter by assigned properties
+      // For caretakers, filter by assigned properties.
       if (isCaretaker && user) {
-        // Get assigned properties
-        const { data: caretakerProps } = await supabase
+        const { data: caretakerProps, error: caretakerPropsError } = await supabase
           .from("caretaker_properties")
           .select("property_id")
           .eq("user_id", user.id);
-        
-        const propertyIds = (caretakerProps ?? []).map(cp => cp.property_id);
-        
+
+        if (caretakerPropsError) {
+          toast.error(caretakerPropsError.message);
+          setItems([]);
+          return;
+        }
+
+        const propertyIds = (caretakerProps ?? []).map((cp) => cp.property_id);
+
         if (propertyIds.length === 0) {
           setItems([]);
           return;
         }
 
-        // Get unit IDs for those properties
-        const { data: units } = await supabase
+        const { data: units, error: unitsError } = await supabase
           .from("units")
-          .select("id")
+          .select("id,property_id")
           .in("property_id", propertyIds);
-        
-        const unitIds = (units ?? []).map(u => u.id);
-        
+
+        if (unitsError) {
+          toast.error(unitsError.message);
+          setItems([]);
+          return;
+        }
+
+        const unitIds = (units ?? []).map((u) => u.id);
+
         if (unitIds.length === 0) {
           setItems([]);
           return;
         }
 
-        // Get lease IDs and tenant IDs for those units
-        const { data: leases } = await supabase
+        const { data: leases, error: leasesError } = await supabase
           .from("leases")
-          .select("id,tenant_id")
+          .select("id,tenant_id,unit_id")
           .in("unit_id", unitIds);
-        
-        const leaseIds = (leases ?? []).map(l => l.id);
-        const tenantIds = (leases ?? []).map(l => l.tenant_id);
-        
-        if (leaseIds.length === 0 && tenantIds.length === 0) {
+
+        if (leasesError) {
+          toast.error(leasesError.message);
           setItems([]);
           return;
         }
 
-        // Get payments with lease_id from our leases OR with tenant_id and null lease_id
-        if (leaseIds.length > 0) {
-          const { data: byLease } = await supabase
-            .from("payments")
-            .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
-            .in("lease_id", leaseIds);
-          paymentsData = [...(paymentsData ?? []), ...(byLease ?? [])];
+        const { data, error } = await supabase
+          .from("payments")
+          .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
+          .order("paid_at", { ascending: false });
+
+        if (error) {
+          toast.error(error.message);
+          return;
         }
 
-        if (tenantIds.length > 0) {
-          const { data: byTenant } = await supabase
-            .from("payments")
-            .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
-            .in("tenant_id", tenantIds)
-            .is("lease_id", null);
-          paymentsData = [...(paymentsData ?? []), ...(byTenant ?? [])];
-        }
+        const scopedLeaseIds = new Set((leases ?? []).map((l) => l.id));
+        const scopedTenantIds = new Set((leases ?? []).map((l) => l.tenant_id).filter(Boolean) as string[]);
+        const scopedUnitIds = new Set(unitIds);
 
-        // Deduplicate
-        const seen = new Set<string>();
-        paymentsData = paymentsData.filter(p => {
-          if (seen.has(p.id)) return false;
-          seen.add(p.id);
-          return true;
+        paymentsData = (data ?? []).filter((payment) => {
+          const matchesUnit = Boolean(payment.unit_id && scopedUnitIds.has(payment.unit_id));
+          const matchesLease = Boolean(payment.lease_id && scopedLeaseIds.has(payment.lease_id));
+          const matchesTenant = Boolean(
+            payment.tenant_id &&
+            scopedTenantIds.has(payment.tenant_id) &&
+            !payment.lease_id &&
+            !payment.unit_id,
+          );
+          return matchesUnit || matchesLease || matchesTenant;
         });
-
-        paymentsData = paymentsData.sort((a, b) => new Date(b.paid_at).getTime() - new Date(a.paid_at).getTime());
       } else {
         // For admin/staff, get all payments
         const { data, error } = await supabase
           .from("payments")
-          .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id")
+          .select("id,receipt_number,amount,method,reference,reason,paid_at,tenant_id,lease_id,unit_id")
           .order("paid_at", { ascending: false });
         
         if (error) return toast.error(error.message);
@@ -168,16 +174,23 @@ export default function Payments() {
         return;
       }
 
-      const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id))];
+      const tenantIds = [...new Set(paymentsData.map((p) => p.tenant_id).filter(Boolean) as string[])];
       const leaseIds = [...new Set(paymentsData.map((p) => p.lease_id).filter(Boolean) as string[])];
+      const paymentUnitIds = [...new Set(paymentsData.map((p) => p.unit_id).filter(Boolean) as string[])];
 
-      const [tenantsRes, leasesRes] = await Promise.all([
+      const [tenantsRes, leasesRes, unitsRes] = await Promise.all([
         supabase.from("tenants").select("id,full_name").in("id", tenantIds),
         leaseIds.length
           ? supabase
               .from("leases")
               .select("id,units(house_number,properties(name))")
               .in("id", leaseIds)
+          : Promise.resolve({ data: [] as unknown[] }),
+        paymentUnitIds.length
+          ? supabase
+              .from("units")
+              .select("id,house_number,properties(name)")
+              .in("id", paymentUnitIds)
           : Promise.resolve({ data: [] as unknown[] }),
       ]);
 
@@ -188,9 +201,17 @@ export default function Payments() {
           units: { house_number: string; properties: { name: string } | null } | null;
         }>).map((l) => [l.id, l]),
       );
+      const unitMap = new Map(
+        ((unitsRes.data ?? []) as Array<{
+          id: string;
+          house_number: string;
+          properties: { name: string } | null;
+        }>).map((u) => [u.id, u]),
+      );
 
       const formatted: Row[] = paymentsData.map((p) => {
         const lease = p.lease_id ? leaseMap.get(p.lease_id) : null;
+        const unit = p.unit_id ? unitMap.get(p.unit_id) : null;
         return {
           id: p.id,
           receipt_number: p.receipt_number,
@@ -201,9 +222,10 @@ export default function Payments() {
           paid_at: p.paid_at,
           tenant_id: p.tenant_id,
           lease_id: p.lease_id,
+          unit_id: p.unit_id ?? null,
           tenants: tenantMap.get(p.tenant_id) ?? null,
-          unit_label: lease?.units?.house_number ?? null,
-          property_name: lease?.units?.properties?.name ?? null,
+          unit_label: unit?.house_number ?? lease?.units?.house_number ?? null,
+          property_name: unit?.properties?.name ?? lease?.units?.properties?.name ?? null,
         };
       });
 
@@ -235,7 +257,9 @@ export default function Payments() {
     return (
       r.receipt_number.toLowerCase().includes(s) ||
       (r.tenants?.full_name ?? "").toLowerCase().includes(s) ||
-      (r.reference ?? "").toLowerCase().includes(s)
+      (r.reference ?? "").toLowerCase().includes(s) ||
+      (r.unit_label ?? "").toLowerCase().includes(s) ||
+      (r.property_name ?? "").toLowerCase().includes(s)
     );
   });
 
@@ -271,7 +295,7 @@ export default function Payments() {
         </div>
       </header>
 
-      <Input placeholder="Search receipt / tenant / reference…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-md" />
+      <Input placeholder="Search receipt / tenant / unit / property / reference…" value={q} onChange={(e) => setQ(e.target.value)} className="max-w-md" />
 
       {items === null ? (
         <div className="flex h-40 items-center justify-center">
@@ -439,32 +463,34 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
       const now = new Date();
       const receipt = `RCP-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}-${Date.now().toString().slice(-6)}`;
 
-      // Get the active lease - first try by unit_id, then by tenant_id
+      // Link the payment to the relevant lease using the selected unit first,
+      // then fall back to the selected tenant when needed.
       let leaseData: any = null;
-      
+
       if (values.unit_id) {
-        // Try to get lease by unit_id
         const { data } = await supabase
           .from("leases")
-          .select("id")
+          .select("id,tenant_id,unit_id")
           .eq("unit_id", values.unit_id)
-          .eq("status", "active")
-          .maybeSingle();
-        leaseData = data;
-      } else if (values.tenant_id) {
-        // Fallback: get lease by tenant_id
+          .order("start_date", { ascending: false })
+          .limit(1);
+        leaseData = data?.[0] ?? null;
+      }
+
+      if (!leaseData && values.tenant_id) {
         const { data } = await supabase
           .from("leases")
-          .select("id")
+          .select("id,tenant_id,unit_id")
           .eq("tenant_id", values.tenant_id)
-          .eq("status", "active")
-          .maybeSingle();
-        leaseData = data;
+          .order("start_date", { ascending: false })
+          .limit(1);
+        leaseData = data?.[0] ?? null;
       }
 
       const payload: Record<string, unknown> = {
         receipt_number: receipt,
-        tenant_id: values.tenant_id || null,
+        tenant_id: leaseData?.tenant_id ?? (values.tenant_id || null),
+        unit_id: values.unit_id || leaseData?.unit_id || null,
         amount: values.amount,
         method: values.method,
         reference: values.reference || null,
@@ -498,12 +524,14 @@ function RecordPaymentDialog({ onCreated }: { onCreated: () => void }) {
     setValue("unit_id", unitId);
     
     // Get the tenant associated with this unit (via active lease)
-    const { data: leaseData } = await supabase
+    const { data } = await supabase
       .from("leases")
       .select("tenant_id,tenants(full_name)")
       .eq("unit_id", unitId)
-      .eq("status", "active")
-      .maybeSingle();
+      .order("start_date", { ascending: false })
+      .limit(1);
+
+    const leaseData = data?.[0] ?? null;
 
     if (leaseData?.tenant_id) {
       handleTenantSelect(leaseData.tenant_id, leaseData.tenants?.full_name || unitName);

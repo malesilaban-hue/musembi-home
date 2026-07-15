@@ -182,20 +182,17 @@ function TenantDialog({ userId, onCreated }: { userId: string; onCreated: () => 
         .order("house_number");
       
       if (!error && data) {
-        // Filter to include only units without active leases
-        const availableUnits = data.filter((u: any) => {
-          if (u.status === "vacant") return true;
-          // For occupied units, only include if no active leases
-          return !u.leases || u.leases.length === 0;
-        }).map((u: any) => ({
-          id: u.id,
-          house_number: u.house_number,
-          unit_type: u.unit_type,
-          floor_level: u.floor_level,
-          rent: u.rent,
-          status: u.status,
-          properties: u.properties,
-        }));
+        const availableUnits = data
+          .filter((u: any) => u.status === "vacant")
+          .map((u: any) => ({
+            id: u.id,
+            house_number: u.house_number,
+            unit_type: u.unit_type,
+            floor_level: u.floor_level,
+            rent: u.rent,
+            status: u.status,
+            properties: u.properties,
+          }));
         setUnits(availableUnits);
       }
     };

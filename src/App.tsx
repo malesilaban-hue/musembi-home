@@ -17,6 +17,7 @@ const LeaseDetail = lazy(() => import("./pages/LeaseDetail"));
 const Invoices = lazy(() => import("./pages/Invoices"));
 const InvoiceDetail = lazy(() => import("./pages/InvoiceDetail"));
 const Payments = lazy(() => import("./pages/Payments"));
+const UnitPaymentStatus = lazy(() => import("./pages/UnitPaymentStatus"));
 const Maintenance = lazy(() => import("./pages/Maintenance"));
 const Team = lazy(() => import("./pages/Team"));
 const Profile = lazy(() => import("./pages/Profile"));
@@ -55,6 +56,8 @@ export default function App() {
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/payments" element={<Payments />} />
+          <Route path="/paid-units" element={<UnitPaymentStatus mode="paid" />} />
+          <Route path="/unpaid-units" element={<UnitPaymentStatus mode="unpaid" />} />
           <Route path="/maintenance" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><Maintenance /></RequireRole>} />
           <Route path="/team" element={<RequireRole roles={["super_admin","landlord"]}><Team /></RequireRole>} />
           <Route path="/profile" element={<Profile />} />

@@ -38,21 +38,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await supabase
         .from("user_roles")
         .select("role")
-        .eq("user_id", uid)
-        .limit(1)
-        .maybeSingle();
-      
+        .eq("user_id", uid);
+
       if (error) {
         console.warn("Error loading roles:", error.message);
         setRoles([]);
         return;
       }
-      
-      if (data?.role) {
-        setRoles([data.role as AppRole]);
-      } else {
-        setRoles([]);
-      }
+
+      const roleList = (data ?? [])
+        .map((row) => row.role)
+        .filter((role): role is AppRole => Boolean(role));
+      setRoles([...new Set(roleList)]);
     } catch (err: any) {
       console.warn("Exception loading roles:", err?.message);
       setRoles([]);
