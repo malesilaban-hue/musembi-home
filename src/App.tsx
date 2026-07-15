@@ -3,7 +3,6 @@ import { lazy, Suspense } from "react";
 import { RequireAuth } from "./components/RequireAuth";
 import { RequireRole } from "./components/RequireRole";
 import { AppShell } from "./components/layout/AppShell";
-import { PWAInstallPrompt } from "./components/PWAInstallPrompt";
 import { Loader2 } from "lucide-react";
 
 const Auth = lazy(() => import("./pages/Auth"));
@@ -35,7 +34,6 @@ function PageFallback() {
 export default function App() {
   return (
     <Suspense fallback={<PageFallback />}>
-      <PWAInstallPrompt />
       <Routes>
         <Route path="/auth" element={<Auth />} />
         <Route
@@ -56,8 +54,25 @@ export default function App() {
           <Route path="/invoices" element={<Invoices />} />
           <Route path="/invoices/:id" element={<InvoiceDetail />} />
           <Route path="/payments" element={<Payments />} />
-          <Route path="/paid-units" element={<UnitPaymentStatus mode="paid" />} />
-          <Route path="/unpaid-units" element={<UnitPaymentStatus mode="unpaid" />} />
+          <Route path="/payments/status">
+            <Route index element={<Navigate to="unpaid" replace />} />
+            <Route
+              path="paid"
+              element={
+                <RequireRole roles={["super_admin","landlord","caretaker","accountant"]}>
+                  <UnitPaymentStatus mode="paid" />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="unpaid"
+              element={
+                <RequireRole roles={["super_admin","landlord","caretaker","accountant"]}>
+                  <UnitPaymentStatus mode="unpaid" />
+                </RequireRole>
+              }
+            />
+          </Route>
           <Route path="/maintenance" element={<RequireRole roles={["super_admin","landlord","caretaker","accountant"]}><Maintenance /></RequireRole>} />
           <Route path="/team" element={<RequireRole roles={["super_admin","landlord"]}><Team /></RequireRole>} />
           <Route path="/profile" element={<Profile />} />
